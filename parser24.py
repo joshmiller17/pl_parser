@@ -8,6 +8,7 @@ Author: Josh Miller
 SPACE = 0x20
 LF = 0xa
 CR = 0xd
+WHITESPACE = [ SPACE, LF, CR ]
 COMMENT = "//" # followed by LF or CR
 ASSIGNOP = "="
 OROP = "||"
@@ -16,18 +17,30 @@ RELOPS = ["==", "!=", "<", "<=", ">", ">="]
 ADDOPS = ["+", "-"]
 MULOPS = ["*", "/"]
 UNOPS = ["!", "-"]
+PRINTABLES = [" ", "!", "#", "$", "%", "&", "(", ")", "*", \
+       "+", ",", "-", ".", "/", ":", ";", "<", "=", ">", "?", "@", "[", "]", "^", "{", "}", "~"]
 illegal = False
+error_line = 0
+error_msg = ""
 
 # TODO
-#  - tab characters are illegal
+#  - work on handling tokens, ~line 85
 
+def throw_error(line, reason)
+	illegal = True
+	error_line = line_count
+	error_msg = reason + " encountered in line " + str(error_line)
 
 def run(input, output):
 	import os
 	ast = []
+	line_count = 0
 	
 	with open(input, 'r') as file:
-		pass
+		line_count += 1
+		line = file.readline()
+		line = tokenize_line(line)
+		# TODO more here
 		
 		
 	with open(output, 'w') as file:
@@ -36,7 +49,43 @@ def run(input, output):
 		else:
 			file.write(ast_to_string(ast, "", 0))
 
+	
+	if illegal:
+		print("Encountered syntax error while parsing " + str(input))
+		print(error_msg)
+			
 
+def is_valid_char(c, mustbe=[], cantbe=[]):
+	restrictions = cantbe
+	if mustbe != []:
+		options = ["digit", "lower", "upper", "_", "print"]
+		for opt in options:
+			if opt not in mustbe:
+				restrictions.append(opt)
+	if c.isdigit() and "digit" not in restrictions:
+		return True
+	if c.isalpha():
+		if c.islower() and "lower" not in restrictions:
+			return True
+		elif c.isupper() and "upper" not in restrictions:
+			return True
+	if c == "_" and "_" not in restrictions:
+		return True
+	if c in PRINTABLES and "print" not in restrictions:
+		return True
+	return False
+			
+def tokenize_line(line):
+	for c in line:
+		current_token = ""
+		if c in WHITESPACE:
+			pass # TODO finish token
+		elif is_valid_char(c):
+			current_token += c # TODO anything else?
+		else: #TODO handle
+			throw_error(line_count, "Forbidden character: " + str(c))
+			break
+			
 def ast_to_string(ast, out, indent_level):
 	if indent_level == 0:
 		out.append("(program\n")
@@ -48,7 +97,7 @@ def ast_to_string(ast, out, indent_level):
 			# TODO 
 			print("Not sure what to do here, e is not array: " + e)
 	
-	
+		# TODO more here
 	
 	out.append(")")
 	return out

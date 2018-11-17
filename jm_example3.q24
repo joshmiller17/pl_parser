@@ -1,0 +1,23 @@
+//Comment
+
+protocol proto {
+    
+}
+
+class c implements proto {
+    () { }
+
+    fun test () {
+        null;
+    }
+}
+
+{
+    primes c = new prime();
+    printBool (c.isPrime (readInt()));
+	printString(" test ")
+	printString(" test2 
+	eep
+	")
+    printLine();
+}

@@ -18,9 +18,6 @@ class prime implements primes {
         return true;
     }
 
-    // Every kind of expression there is,
-    // except for new expressions with a type application.
-
     fun test () {
         null;
     }

@@ -1,0 +1,5 @@
+#!/bin/sh
+
+LARCENY=${LARCENY:-"larceny"}
+
+${LARCENY} --r7rs --program parser24.sps.slfasl -- $@ 

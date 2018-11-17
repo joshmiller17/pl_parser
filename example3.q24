@@ -1,0 +1,45 @@
+// This program illustrates the possibility of integer overflow.
+//
+// Quirk24 uses 24-bit two's complement integers,
+// and integer overflow halts the program with an error message.
+
+protocol fibonacci {
+    fun fib (int n) : int;               // Fibonacci numbers
+    fun fact (int n) : int;              // factorials
+    fun factFloat (float x) : float;
+}
+
+class c1 implements fibonacci {
+
+    () { }
+
+    fun fib (int n) : int {
+        if (n < 2)
+            return n;
+        else return fib (n - 1) + fib (n - 2);
+    }
+
+    fun fact (int n) : int {
+        if (n == 0)
+            return 1;
+        else return n * fact (n - 1);
+    }
+
+    fun factFloat (float x) : float {
+        if (x == 0.0)
+            return 1.0;
+        else return x * factFloat (x - 1.0);
+    }
+}
+
+{
+    fibonacci obj = new c1();
+    int n = readInt();
+    float x = n + 0.0;
+    printInt (obj.fib (n));
+    printLine();
+    printFloat (obj.factFloat (x));
+    printLine();
+    printInt (obj.fact (n));
+    printLine();
+}

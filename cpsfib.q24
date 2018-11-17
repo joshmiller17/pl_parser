@@ -1,0 +1,33 @@
+// Computing Fibonacci numbers in continuation-passing style.
+//
+// This is a good test of proper tail recursion.
+
+protocol fibber {
+
+    // Computes the nth Fibonacci number and passes it to k.
+
+    fun fib (int n, function ((int) -> int) k) : int;
+}
+
+class fib implements fibber {
+    () { }
+
+    fun fib (int n, function ((int) -> int) k) : int {
+        if (n < 2)
+            return k (n);
+        else return fib (n - 1,
+                         lambda (int r1) : int {
+                           return fib (n - 2,
+                                       lambda (int r2) : int {
+                                         return k (r1 + r2);
+                                       });
+                         });
+    }
+}
+
+{
+    int n = readInt();
+    fibber obj = new fib();
+    printInt (obj.fib (n, lambda (int n) : int { return n; }));
+    printLine();
+}

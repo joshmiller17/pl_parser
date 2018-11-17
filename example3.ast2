@@ -1,0 +1,84 @@
+(program
+  ((protoDec
+     fibonacci
+     ()
+     ()
+     ((funProto fib () ((formal (int) n)) (int))
+      (funProto fact () ((formal (int) n)) (int))
+      (funProto
+        factFloat
+        ()
+        ((formal (float) x))
+        (float)))))
+  ((classDec
+     c1
+     ()
+     ((typeApp fibonacci ()))
+     (init () (block () ()))
+     ((funDec
+        fib
+        ()
+        ((formal (int) n))
+        (int)
+        (block ()
+               ((if (binOpn <:int n (intLiteral 2))
+                    (return n)
+                    (return
+                      (binOpn
+                        |+:int|
+                        (call fib ((binOpn |-:int| n (intLiteral 1))))
+                        (call fib ((binOpn |-:int| n (intLiteral 2))))))))))
+      (funDec
+        fact
+        ()
+        ((formal (int) n))
+        (int)
+        (block ()
+               ((if (binOpn =:int n (intLiteral 0))
+                    (return (intLiteral 1))
+                    (return
+                      (binOpn
+                        *:int
+                        n
+                        (call fact ((binOpn |-:int| n (intLiteral 1))))))))))
+      (funDec
+        factFloat
+        ()
+        ((formal (float) x))
+        (float)
+        (block ()
+               ((if (binOpn =:flt x (floatLiteral 0.0))
+                    (return (floatLiteral 1.0))
+                    (return
+                      (binOpn
+                        *:flt
+                        x
+                        (call factFloat
+                              ((binOpn |-:flt| x (floatLiteral 1.0)))))))))))))
+  (block ((varDec
+            (typeApp fibonacci ())
+            obj
+            (newObject c1 ()))
+          (varDec (int) n (call readInt ()))
+          (varDec
+            (float)
+            x
+            (binOpn
+              |+:flt|
+              (unOpn int2float (unOpn deref n))
+              (floatLiteral 0.0))))
+         ((expStm
+            (call printInt
+                  ((call (dot (unOpn deref obj) fib)
+                         ((unOpn deref n))))))
+          (expStm (call printLine ()))
+          (expStm
+            (call printFloat
+                  ((call (dot (unOpn deref obj) factFloat)
+                         ((unOpn deref x))))))
+          (expStm (call printLine ()))
+          (expStm
+            (call printInt
+                  ((call (dot (unOpn deref obj) fact)
+                         ((unOpn deref n))))))
+          (expStm (call printLine ())))))

@@ -1,0 +1,112 @@
+protocol list<T> {
+    fun empty () : list<T>;
+    fun with (T z) : list<T>;
+    fun isEmpty () : bool;
+    fun first () : T;
+    fun rest () : list<T>;
+    fun last () : T;
+    fun butLast () : list<T>;
+    fun followedBy (list<T> x) : list<T>;
+    fun forEach<T2> (function ((T) -> T2) f);
+    fun map<T2> (function ((T) -> T2) f) : list<T2>;
+}
+
+class emptyList<T> implements list<T> {
+    () { }
+
+    fun empty () : list<T> { return this; }
+
+    fun with (T z) : list<T> {
+        return new linkedList<T> (this, z);
+    }
+
+    fun isEmpty () : bool { return true; }
+
+    fun first () : T {
+        halt ("first not defined on empty list");
+    }
+
+    fun rest () : list<T> {
+        halt ("rest not defined on empty list");
+    }
+
+    fun last () : T {
+        halt ("last not defined on empty list");
+    }
+
+    fun butLast () : list<T> {
+        halt ("butLast not defined on empty list");
+    }
+
+    fun followedBy (list<T> x) : list<T> {
+        return x;
+    }
+
+    fun forEach<T2> (function ((T) -> T2) f) { }
+
+    fun map<T2> (function ((T) -> T2) f) : list<T2> {
+        return new emptyList<T2>();
+    }
+}
+
+class linkedList<T> implements list<T> {
+    (list<T> x, T z) {
+        this.prefix = x;
+        this.lastItem = z;
+    }
+
+    list<T> prefix;
+    T lastItem;
+
+    fun empty () : list<T> { return new emptyList<T>(); }
+
+    fun with (T z) : list<T> {
+        return new linkedList<T> (this, z);
+    }
+
+    fun isEmpty () : bool { return false; }
+
+    fun first () : T {
+        if (this.prefix.isEmpty())
+            return this.lastItem;
+        else
+            return this.prefix.first();
+    }
+
+    fun rest () : list<T> {
+        if (this.prefix.isEmpty())
+            return this.prefix;
+        else
+            return this.prefix.rest().with(this.lastItem);
+    }
+
+    fun last () : T {
+        return this.lastItem;
+    }
+
+    fun butLast () : list<T> {
+        return this.prefix;
+    }
+
+    fun followedBy (list<T> x0) : list<T> {
+        list<T> result = this;
+        list<T> x = x0;
+        while (! (x.isEmpty())) {
+            result = result.with (x.first());
+            x = x.rest();
+        }
+        return result;
+    }
+
+    fun forEach<T2> (function ((T) -> T2) f) {
+        this.map(f);
+    }
+
+    fun map<T2> (function ((T) -> T2) f) : list<T2> {
+        list<T2> result = this.prefix.map (f);
+        result = result.with (f (this.lastItem));
+        return result;
+    }
+}
+
+;

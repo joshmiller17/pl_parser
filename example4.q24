@@ -1,0 +1,183 @@
+// Sieve of Eratosthenes.
+
+protocol primes {
+    fun printPrimes ();                // prints a bunch of primes
+}
+
+protocol list<T> {
+    fun empty () : list<T>;
+    fun with (T z) : list<T>;
+    fun isEmpty () : bool;
+    fun first () : T;
+    fun rest () : list<T>;
+    fun last () : T;
+    fun butLast () : list<T>;
+    fun followedBy (list<T> x) : list<T>;
+    fun forEach<T2> (function ((T) -> T2) f);
+    fun map<T2> (function ((T) -> T2) f) : list<T2>;
+}
+
+class emptyList<T> implements list<T> {
+    () { }
+
+    fun empty () : list<T> { return this; }
+
+    fun with (T z) : list<T> {
+        return new linkedList<T> (this, z);
+    }
+
+    fun isEmpty () : bool { return true; }
+
+    fun first () : T {
+        halt ("first not defined on empty list");
+    }
+
+    fun rest () : list<T> {
+        halt ("rest not defined on empty list");
+    }
+
+    fun last () : T {
+        halt ("last not defined on empty list");
+    }
+
+    fun butLast () : list<T> {
+        halt ("butLast not defined on empty list");
+    }
+
+    fun followedBy (list<T> x) : list<T> {
+        return x;
+    }
+
+    fun forEach<T2> (function ((T) -> T2) f) { }
+
+    fun map<T2> (function ((T) -> T2) f) : list<T2> {
+        return new emptyList<T2>();
+    }
+}
+
+class linkedList<T> implements list<T> {
+    (list<T> x, T z) {
+        this.prefix = x;
+        this.lastItem = z;
+    }
+
+    list<T> prefix;
+    T lastItem;
+
+    fun empty () : list<T> { return new emptyList<T>(); }
+
+    fun with (T z) : list<T> {
+        return new linkedList<T> (this, z);
+    }
+
+    fun isEmpty () : bool { return false; }
+
+    fun first () : T {
+        if (this.prefix.isEmpty())
+            return this.lastItem;
+        else
+            return this.prefix.first();
+    }
+
+    fun rest () : list<T> {
+        if (this.prefix.isEmpty())
+            return this.prefix;
+        else
+            return this.prefix.rest().with(this.lastItem);
+    }
+
+    fun last () : T {
+        return this.lastItem;
+    }
+
+    fun butLast () : list<T> {
+        return this.prefix;
+    }
+
+    fun followedBy (list<T> x0) : list<T> {
+        list<T> result = this;
+        list<T> x = x0;
+        while (! (x.isEmpty())) {
+            result = result.with (x.first());
+            x = x.rest();
+        }
+        return result;
+    }
+
+    fun forEach<T2> (function ((T) -> T2) f) {
+        this.map(f);
+    }
+
+    fun map<T2> (function ((T) -> T2) f) : list<T2> {
+        list<T2> result = this.prefix.map (f);
+        result = result.with (f (this.lastItem));
+        return result;
+    }
+}
+
+////////////////////////////////////////////////////////////////
+
+class eratosthenes implements primes {
+
+    (int n) {
+        this.n = n;
+        flags = new bool[n];
+        for (int i = 0; i < n; i = i + 1)
+            flags[i] = true;
+        thePrimes = new emptyList<int>();
+    }
+
+    int n;
+
+    bool[] flags;
+
+    list<int> thePrimes;
+
+    // Prints all primes less than n.
+
+    fun printPrimes () {
+        if (n > 2 && thePrimes.isEmpty())
+            sieve();
+        else;
+        thePrimes.forEach (lambda (int n) {
+                               printInt(n);
+                               printLine();
+                           });
+    }
+
+    // Precondition: n > 2
+    // and sieve has not been called previously.
+
+    fun sieve () {
+        int p = 2;
+        flags[0] = false;
+        flags[1] = false;
+        while (p < n) {
+            if (flags[p]) {
+                int i = p + p;
+                thePrimes = thePrimes.with (p);
+                while (i < n) {
+                    flags[i] = false;
+                    i = i + p;
+                }
+            }
+            else;
+            p = p + 1;
+        }
+    }
+}
+
+{
+    int n = readInt();
+    primes g = new eratosthenes(n);
+    g.printPrimes();
+    printLine();
+
+    // This tests whether a second call to printPrimes() works properly,
+    // but it's annoying to print a whole lot of primes twice so the test
+    // is performed only for small values of n.
+
+    if (n < 20)
+        g.printPrimes();
+    else;
+}

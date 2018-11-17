@@ -1,0 +1,20 @@
+(program
+  ((protoDec proto () () ()))
+  ((classDec
+     c
+     ()
+     ((typeApp proto ()))
+     (init () (block () ()))
+     ((funDec
+        test
+        ()
+        ()
+        (void)
+        (block () ((expStm (null))))))))
+  (block ()
+         ((expStm
+            (call printString ((stringLiteral " test "))))
+          (expStm
+            (call printString
+                  ((stringLiteral " test2 \r\n\teep\r\n\t"))))
+          (expStm (call printLine ())))))

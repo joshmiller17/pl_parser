@@ -1,0 +1,33 @@
+//Comment
+
+protocol primes {
+    fun divides (int d, int n) : bool;
+    fun isPrime (int n) : bool;
+}
+
+class prime implements primes {
+    () { }
+
+    fun divides (int d, int n) : bool {
+        return true;
+    }
+
+    fun isPrime (int n) : bool {
+        //printInt (n);
+        //printLine();
+        return true;
+    }
+
+    // Every kind of expression there is,
+    // except for new expressions with a type application.
+
+    fun test () {
+        null;
+    }
+}
+
+{
+    primes c = new prime();
+    printBool (c.isPrime (readInt()));
+    printLine();
+}

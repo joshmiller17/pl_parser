@@ -24,7 +24,7 @@ error_line = 0
 error_msg = ""
 
 # TODO
-#  - work on handling tokens, ~line 85
+#  
 
 def throw_error(line, reason)
 	illegal = True
@@ -74,6 +74,18 @@ def is_valid_char(c, mustbe=[], cantbe=[]):
 	if c in PRINTABLES and "print" not in restrictions:
 		return True
 	return False
+	
+def is_id(token):
+	valid = is_valid_char(token[0], mustbe=["lower"])
+	for c in token[1:]:
+		valid = valid and is_valid_char(c, cantbe["print"]) # subsequent
+	return valid
+	
+def is_tvar(token):
+	valid = is_valid_char(token[0], mustbe=["upper"])
+	for c in token[1:]:
+		valid = valid and is_valid_char(c, cantbe["print"]) # subsequent
+	return valid
 			
 def tokenize_line(line):
 	for c in line:

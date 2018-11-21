@@ -46,8 +46,6 @@ error_msg = ""
 #    term
 #    factor
 #    factor-rest
-#    literal
-#    charliteral
 #    floatliteral -- ignore for now, handle later
 #    exponent  -- ignore for now, handle later
 
@@ -134,6 +132,20 @@ def is_stringliteral(token):
 def is_charliteral(token):
 	return len(token) == 3 and token[0] == "\'" and token[2] == "\'" \
 		and is_valid_char(token[1])
+		
+def is_floatliteral(token):
+	return False # TODO
+		
+def is_literal(token):
+	if token == "null":
+		return True
+	elif token == "true":
+		return True
+	elif token == "false":
+		return True
+	else:
+		return is_charliteral(token) or is_stringliteral(token) \
+				or is_intliteral(token) or is_floatliteral(token)
 	
 			
 def tokenize_line(line):

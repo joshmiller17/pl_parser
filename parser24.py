@@ -25,8 +25,10 @@ error_msg = ""
 parsing_string = False
 expecting = ["<protodecs>", "<classdecs>", "<stm>"] #initial syntax expectations
 ast = []
+line_count = 0
 current_obj = None
 current_obj_type = None
+DEBUG = True
 
 
 class Protocol:
@@ -90,7 +92,7 @@ class Class:
 	def add_typevar(self, v):
 		self.typevars.append(v)
 		
-	def add_formals_to_init(self, f)
+	def add_formals_to_init(self, f):
 		self.init_formals.append(f)
 		
 	def add_block(self, b):
@@ -110,20 +112,23 @@ class Block:
 		
 		
 
-def throw_error(line, reason)
+def throw_error(reason):
+	global line_count
 	illegal = True
 	error_line = line_count
 	error_msg = reason + " encountered in line " + str(error_line)
 
 def run(input, output):
 	import os
-	line_count = 0
+	global line_count
 	
 	with open(input, 'r') as file:
-		line_count += 1
 		line = file.readline()
-		line = tokenize_line(line)
-		# TODO more here
+		while (line):
+			line_count += 1
+			line = tokenize_line(line)
+			line = file.readline()
+			# TODO more here
 		
 		
 	with open(output, 'w') as file:
@@ -159,31 +164,42 @@ def is_valid_char(c, mustbe=[], cantbe=[]):
 	return False
 			
 def tokenize_line(line):
-	for c in line:
-		current_token = ""
-		if c in WHITESPACE:
+	if DEBUG:
+		print("DEBUG: INPUT: " + line)
+	current_token = ""
+	for c in line:	
+		if ord(c) in WHITESPACE:
 			if parsing_string:
 				current_token += c # TODO anything else?
 			elif current_token != "":
 				token = current_token
 				current_token = ""
-				add_to_ast(token)
+				if token.startswith("//"): # comment, skip the rest of line
+					current_token = ""
+					break
+				else:
+					add_to_ast(token)
 			else:
 				pass # just clearing whitespace
 		elif is_valid_char(c):
 			current_token += c # TODO anything else?
 		else:
-			throw_error(line_count, "Forbidden character: " + str(c))
+			throw_error("Forbidden character: " + str(c))
 			break
 	
 	
 def add_to_ast(token):
+	global expecting
+	if DEBUG:
+		print("DEBUG: Tokenizing " + token)
 	try:
 		TOKEN_TO_HANDLER[expecting[0]](token)
 	except KeyError as e:
 		print("Parser error: No handler for token " + token + " while expecting " + expecting[0])
+		exit(1)
 	
 def handle_protodecs(token):
+	global expecting
 	if token == "protocol":
 		expecting.insert(0, "<protodec>")
 		current_obj = Protocol()
@@ -194,6 +210,7 @@ def handle_protodecs(token):
 		add_to_ast(token)
 		
 def handle_classdecs(token):
+	global expecting
 	if token == "class":
 		expecting.insert(0, "<classdec>")
 		current_obj = Class()
@@ -202,22 +219,49 @@ def handle_classdecs(token):
 	else:
 		expecting = expecting[1:] # rest of classdecs is empty
 		add_to_ast(token)
+		
+def handle_protodec(token)
+	global expecting
+	global current_obj
+	if assert_obj_type("Protocol"):
+		if current_obj.typeid == None:
+			if is_id(token):
+				current_obj.set_typeid(token)
+			else
+				throw_error("Encountered " + token + " while expecting a typeid for a protodec")
+		elif # TODO NOW protodec:typevars
+	
+	
+def is_id(token):
+
+def assert_obj_type(t):
+	#global current_obj_type
+	if t == current_obj_type:
+		return True
+	else:
+		throw_error("Encountered a " + t + " while expecting a " + current_obj_type)
+		return False
+		
 	
 # A recursive handler for taking the AST array and formatting it into a string for .ast output
 def ast_to_string(ast, out, indent_level):
 	if indent_level == 0:
-		out.append("(program\n")
+		out += "(program\n"
 	indent = indent_level + 1
+	
+	# TODO redo this section now that I'm using classes
+	"""
 	for e in ast:
-		if hasattr(next, "__len__") # check if we need to recurse
-			out.append(ast_to_string(e, out, indent))
+		if hasattr(next, "__len__"): # check if we need to recurse
+			out += ast_to_string(e, out, indent)
 		else:
 			# TODO 
-			print("Not sure what to do here, e is not array: " + e)
+			print("Not sure what to do here, e is not array: " + str(e))
 	
 		# TODO more here
+	"""
 	
-	out.append(")")
+	out += ")"
 	return out
 			
 			
@@ -225,7 +269,8 @@ def ast_to_string(ast, out, indent_level):
 
 TOKEN_TO_HANDLER = { 
 "<protodecs>" : handle_protodecs,
-"<classdecs>" : handle_classdecs
+"<classdecs>" : handle_classdecs,
+"<protodec>" : handle_protodec,
 }			
 			
 def main():

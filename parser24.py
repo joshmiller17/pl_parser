@@ -31,6 +31,35 @@ current_obj_type = None
 DEBUG = True
 
 
+
+# TODO
+#  handlers for:
+#    constdec
+#    globaldec
+#    fielddec
+#    formal
+#    fundec
+#    block
+#    localdec
+#    vardec
+#    type
+#    primtype
+#    rtype
+#    arrow
+#    stm
+#    exp
+#    lhs
+#    disjunct
+#    conjunct
+#    simple
+#    term
+#    factor
+#    factor-rest
+#    floatliteral -- ignore for now, handle later
+#    exponent  -- ignore for now, handle later
+
+
+
 class Protocol:
 
 	def __init__(self):
@@ -162,6 +191,55 @@ def is_valid_char(c, mustbe=[], cantbe=[]):
 	if c in PRINTABLES and "print" not in restrictions:
 		return True
 	return False
+	
+def is_id(token):
+	valid = is_valid_char(token[0], mustbe=["lower"])
+	if len(token > 1):
+		for c in token[1:]:
+			valid = valid and is_valid_char(c, cantbe["print"]) # subsequent
+	return valid
+	
+def is_tvar(token):
+	valid = is_valid_char(token[0], mustbe=["upper"])
+	if len(token > 1):
+		for c in token[1:]:
+			valid = valid and is_valid_char(c, cantbe["print"]) # subsequent
+	return valid
+	
+def is_intliteral(token):
+	valid = is_valid_char(token[0], mustbe["digit"]
+	if len(token > 1):
+		for c in token[1:]:
+			valid = valid and is_valid_char(c, mustbe["digit"])
+	return valid
+	
+def is_stringliteral(token):
+	str = token[1:-1]
+	if not token.startswith("\"") or not token.endswith("\""):
+		return False
+	valid = True
+	for c in str:
+		valid = valid and is_valid_char(c)
+	return valid
+		
+def is_charliteral(token):
+	return len(token) == 3 and token[0] == "\'" and token[2] == "\'" \
+		and is_valid_char(token[1])
+		
+def is_floatliteral(token):
+	return False # TODO
+		
+def is_literal(token):
+	if token == "null":
+		return True
+	elif token == "true":
+		return True
+	elif token == "false":
+		return True
+	else:
+		return is_charliteral(token) or is_stringliteral(token) \
+				or is_intliteral(token) or is_floatliteral(token)
+	
 			
 def tokenize_line(line):
 	if DEBUG:

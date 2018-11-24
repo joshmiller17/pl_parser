@@ -34,6 +34,9 @@ DEBUG = True
 
 # TODO
 #  handlers for:
+#    funproto
+#    classdec
+#    classbody
 #    constdec
 #    globaldec
 #    fielddec
@@ -146,6 +149,8 @@ def throw_error(reason):
 	illegal = True
 	error_line = line_count
 	error_msg = reason + " encountered in line " + str(error_line)
+	# TODO if token is missing whitespace,
+	#	something like {token} give a helpful message e.g. did you mean { token }
 
 def run(input, output):
 	import os
@@ -194,21 +199,21 @@ def is_valid_char(c, mustbe=[], cantbe=[]):
 	
 def is_id(token):
 	valid = is_valid_char(token[0], mustbe=["lower"])
-	if len(token > 1):
+	if len(token) > 1:
 		for c in token[1:]:
 			valid = valid and is_valid_char(c, cantbe["print"]) # subsequent
 	return valid
 	
 def is_tvar(token):
 	valid = is_valid_char(token[0], mustbe=["upper"])
-	if len(token > 1):
+	if len(token) > 1:
 		for c in token[1:]:
 			valid = valid and is_valid_char(c, cantbe["print"]) # subsequent
 	return valid
 	
 def is_intliteral(token):
-	valid = is_valid_char(token[0], mustbe["digit"]
-	if len(token > 1):
+	valid = is_valid_char(token[0], mustbe["digit"])
+	if len(token) > 1:
 		for c in token[1:]:
 			valid = valid and is_valid_char(c, mustbe["digit"])
 	return valid
@@ -298,19 +303,46 @@ def handle_classdecs(token):
 		expecting = expecting[1:] # rest of classdecs is empty
 		add_to_ast(token)
 		
-def handle_protodec(token)
+def handle_protodec(token):
+	# TODO think through this logic, check to make sure it works
 	global expecting
 	global current_obj
 	if assert_obj_type("Protocol"):
+		# expect id first
 		if current_obj.typeid == None:
 			if is_id(token):
 				current_obj.set_typeid(token)
-			else
+			else:
 				throw_error("Encountered " + token + " while expecting a typeid for a protodec")
-		elif # TODO NOW protodec:typevars
-	
-	
-def is_id(token):
+		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
+		elif ',' in token:
+				expecting.insert(0, "<tvar>") # if we get a comma, tvar must come next
+				for raw_token in token.split(','):
+					t = raw_token.strip()
+					handle_protodec(t)
+				else: # no comma
+					pass # TODO
+		elif is_tvar(token):
+			pass # TODO
+		elif token == "extends":
+			expecting.insert(0, "<extends>")
+			pass # TODO
+		# TODO if 'char' is only character, handle it instead of splitting
+		elif '{' in token:
+			for raw_token in token.split(','):
+				t = raw_token.strip()
+				handle_protodec(t) # TODO, funprotos expected last
+		elif '}' in token:
+			for raw_token in token.split(','):
+				t = raw_token.strip()
+				handle_protodec(t) # TODO, funprotos expected last
+				# TODO end of Protodec
+		else:
+			# TODO more detail about how much information we know about the proto so far
+			throw_error("Encountered " + token + " while parsing a " + current_obj_type)
+			
+	else:
+		throw_error("Encountered " + token + " while parsing a " + current_obj_type)
 
 def assert_obj_type(t):
 	#global current_obj_type

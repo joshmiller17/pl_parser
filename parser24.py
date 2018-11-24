@@ -270,7 +270,7 @@ def tokenize_line(line):
 			throw_error("Forbidden character: " + str(c))
 			break
 	
-	
+# Find the handler to the token, a handler handler
 def add_to_ast(token):
 	global expecting
 	if DEBUG:
@@ -290,7 +290,7 @@ def handle_protodecs(token):
 		ast.append(current_obj)
 	else:
 		expecting = expecting[1:] # rest of protodecs is empty
-		add_to_ast(token)
+		add_to_ast(token) # find a new handler
 		
 def handle_classdecs(token):
 	global expecting
@@ -301,7 +301,26 @@ def handle_classdecs(token):
 		ast.append(current_obj)
 	else:
 		expecting = expecting[1:] # rest of classdecs is empty
-		add_to_ast(token)
+		add_to_ast(token) # find a new handler
+		
+def handle_classdec(token):
+	global expecting
+	pass # TODO, see protodec for guide
+	
+def handle_funprotos(token):
+	global expecting
+	if token == "fun":
+		expecting.insert(0, "<funproto>")
+		current_obj = Funproto()
+		current_obj_type = "Funproto"
+		ast.append(current_obj)
+	else:
+		expecting = expecting[1:] # rest of funprotos is empty
+		add_to_ast(token) # find a new handler
+	
+def handle_funproto(token):
+	global expecting
+	pass # TODO, see protodec for guide
 		
 def handle_protodec(token):
 	# TODO think through this logic, check to make sure it works
@@ -379,8 +398,11 @@ def ast_to_string(ast, out, indent_level):
 
 TOKEN_TO_HANDLER = { 
 "<protodecs>" : handle_protodecs,
-"<classdecs>" : handle_classdecs,
 "<protodec>" : handle_protodec,
+"<classdecs>" : handle_classdecs,
+"<classdec>" : handle_classdec,
+"<funprotos>" : handle_funprotos,
+"<funproto>" : handle_funproto,
 }			
 			
 def main():

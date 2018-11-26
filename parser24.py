@@ -180,8 +180,9 @@ def throw_error(reason, addl=""):
 	if addl:
 		error_msg += "\n" + addl
 	if DEBUG:
-		print("Traceback:")
-		print(traceback.extract_stack())
+		print("Error traceback:")
+		for l in traceback.extract_stack():
+			print("------ " + str(l))
 
 def run(input, output):
 	import os
@@ -304,6 +305,8 @@ def tokenize_line(line):
 		else:
 			throw_error("Forbidden character: \'" + str(c) + "\'")
 			break
+	if current_token and not current_token.startswith("//"):
+		add_to_ast(current_token)
 	
 # if current obj handling is None, pop from stack
 def check_current_obj():
@@ -333,14 +336,21 @@ def add_to_ast(token):
 	check_current_obj()
 	
 	try:
-		handler = TOKEN_TO_HANDLER[expecting[0]]
-		handler(token)
+		handler = TOKEN_TO_HANDLER[expecting[0]]	
 		if DEBUG:
-			print("Token <" + token + "> sent to " + str(handler))
+			print("Token <" + token + "> sent to " + str(handler))	
+		handler(token)
 	except KeyError as e:
 		print("Parser error: No handler for token " + token + " while expecting " + expecting[0])
 		exit(1)
-	
+
+# handle token inside parens, e.g. (int or (string)
+def read_tight_code(token):
+	new_line = token.replace("(", " ( ")
+	new_line = new_line.replace(")", " ) ")
+	print(token + " loosened to " + new_line) # TODO remove
+	tokenize_line(new_line)
+		
 def handle_protodecs(token):
 	global expecting
 	global current_obj
@@ -384,7 +394,7 @@ def handle_classdecs(token):
 def handle_classdec(token):
 	global expecting
 	pass # TODO, see protodec for guide
-	throw_error("Parser not defined for this syntax.")
+	throw_error("Parser not defined for this syntax") # TODO
 	
 def handle_funprotos(token):
 	global expecting
@@ -417,11 +427,34 @@ def handle_funproto(token):
 				current_obj.set_id(token)
 			else:
 				throw_error("Encountered " + token + " while expecting an <id> for a <funproto>")
+		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
+		elif ',' == token: # expect another tvar
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Too many commas in typevars?")
+			current_obj.set_expecting(True)
+		elif ',' in token: # comma is part of another token
+			for raw_token in token.split(','):
+				t = raw_token.strip() # double check no whitespace
+				add_to_ast(t)
+				add_to_ast(',') # splitting on commas, put commas back
+		elif is_tvar(token): # no comma
+			current_obj.add_typevar(token)
+			current_obj.set_expecting(False)
+		elif '(' in token:
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				if '(' == token:
+					#expecting = expecting[1:] # rest of funprotos is formals, possibly rtype
+					expecting.insert(0, "<formals>")
+				else:
+					read_tight_code(token)
 		else:
-			throw_error("Parser not defined for this syntax.")
-	
-	
-	
+			throw_error("Parser not defined for this syntax") # TODO
+		
+def handle_formals(token):
+	print("formal handling " + token)
+	throw_error("Parser not defined for this syntax") # TODO
 		
 def handle_protodec(token):
 	global expecting
@@ -459,9 +492,7 @@ def handle_protodec(token):
 					expecting = expecting[1:] # rest of protodec is just funprotos
 					expecting.insert(0, "<funprotos>")
 				else:
-					for raw_token in token.split('{'):
-						t = raw_token.strip()
-						add_to_ast(t) # let handler handler handle it
+					throw_error("Unknown token " + token, addl="Perhaps your { needs a space")
 		else:
 			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
 	else:
@@ -507,6 +538,7 @@ TOKEN_TO_HANDLER = {
 "<classdec>" : handle_classdec,
 "<funprotos>" : handle_funprotos,
 "<funproto>" : handle_funproto,
+"<formals>" : handle_formals,
 }			
 			
 def main():

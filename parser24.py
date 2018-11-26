@@ -10,6 +10,8 @@ import copy
 SPACE = 0x20
 LF = 0xa
 CR = 0xd
+ARROW = "->"
+PRIMTYPES = ["bool", "char", "string", "int", "float"]
 WHITESPACE = [ SPACE, LF, CR ]
 COMMENT = "//" # followed by LF or CR
 ASSIGNOP = "="
@@ -62,10 +64,13 @@ DEBUG = True
 #    term
 #    factor
 #    factor-rest
-#    floatliteral -- ignore for now, handle later
-#    exponent  -- ignore for now, handle later
+#    extends
+#    floatliteral
+#    exponent
 
 
+
+# TODO tricky to handle "int []" without some kind of lookahead function
 
 class Protocol:
 
@@ -113,7 +118,7 @@ class Funproto:
 	def add_typevar(self, v):
 		self.typevars.append(v)
 
-	def add_formals(self, f):
+	def add_formal(self, f):
 		self.formals.append(f)
 		
 	def set_expecting(self, b):
@@ -127,6 +132,18 @@ class Funproto:
 			+ str(self.rtype) + ", typevars=" + str(self.typevars) \
 			+ ",formals=" + str(self.formals) + ",expecting more?=" \
 			+ str(self.expecting_more_vars) + ">"
+		
+class Formal:
+	
+	def __init__(self):
+		self.type = None
+		self.id = None
+		
+	def set_type(self, t):
+		self.type = t
+		
+	def set_id(self, i):
+		self.id = i
 		
 class Class:
 	
@@ -148,7 +165,7 @@ class Class:
 	def add_typevar(self, v):
 		self.typevars.append(v)
 		
-	def add_formals_to_init(self, f):
+	def add_formal_to_init(self, f):
 		self.init_formals.append(f)
 		
 	def add_block(self, b):
@@ -281,6 +298,8 @@ def is_literal(token):
 		return is_charliteral(token) or is_stringliteral(token) \
 				or is_intliteral(token) or is_floatliteral(token)
 	
+def is_typeapp(token): # TODO, can also be <typeid> < <types> >
+	return is_id(token) or is_tvar(token)
 			
 def tokenize_line(line):
 	if DEBUG and not illegal:
@@ -355,18 +374,13 @@ def handle_protodecs(token):
 	global expecting
 	global current_obj
 	global current_obj_type
-	global object_stack
-	global object_stack_type
 	if token == "protocol":
 		expecting.insert(0, "<protodec>")
 		if current_obj:
-			object_stack.insert(0, current_obj)
-			object_type_stack.insert(0, current_obj_type)
-			current_obj = None
-			current_obj_type = None
+			push_stack()
 		current_obj = Protocol()
 		current_obj_type = "Protocol"
-		ast.append(current_obj)
+		ast.append(current_obj) # TODO fix?
 	else:
 		expecting = expecting[1:] # rest of protodecs is empty
 		add_to_ast(token) # find a new handler
@@ -375,18 +389,13 @@ def handle_classdecs(token):
 	global expecting
 	global current_obj
 	global current_obj_type
-	global object_stack
-	global object_stack_type
 	if token == "class":
 		expecting.insert(0, "<classdec>")
 		if current_obj:
-			object_stack.insert(0, current_obj)
-			object_type_stack.insert(0, current_obj_type)
-			current_obj = None
-			current_obj_type = None
+			push_stack()
 		current_obj = Class()
 		current_obj_type = "Class"
-		ast.append(current_obj)
+		ast.append(current_obj) # TODO fix?
 	else:
 		expecting = expecting[1:] # rest of classdecs is empty
 		add_to_ast(token) # find a new handler
@@ -400,18 +409,13 @@ def handle_funprotos(token):
 	global expecting
 	global current_obj
 	global current_obj_type
-	global object_stack
-	global object_stack_type
 	if token == "fun":
 		expecting.insert(0, "<funproto>")
 		if current_obj:
-			object_stack.insert(0, current_obj)
-			object_type_stack.insert(0, current_obj_type)
-			current_obj = None
-			current_obj_type = None
+			push_stack()
 		current_obj = Funproto()
 		current_obj_type = "Funproto"
-		ast.append(current_obj)
+		ast.append(current_obj) # TODO fix?
 	else:
 		expecting = expecting[1:] # rest of funprotos is empty
 		add_to_ast(token) # find a new handler
@@ -452,9 +456,87 @@ def handle_funproto(token):
 		else:
 			throw_error("Parser not defined for this syntax") # TODO
 		
+# push current object to stack
+def push_stack():
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_stack_type
+	object_stack.insert(0, current_obj)
+	object_type_stack.insert(0, current_obj_type)
+	current_obj = None
+	current_obj_type = None
+	
+# pop object from stack to current
+def pop_stack():
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_stack_type
+	current_obj = object_stack[0]
+	current_obj_type = object_type_stack[0]
+	object_stack = object_stack[1:]
+	object_type_stack = object_type_stack[1:]
+
+def is_type(token): # TODO more needed here
+	valid = False
+	valid = valid or token in PRIMTYPES
+	valid = valid or is_typeapp(token)
+	# TODO array, can be <type> []
+	# TODO can be function ( ( <types> ) ARROW <rtype> )
+	return valid
+	
+	
+def is_rtype(token):
+	return token is "void" or is_type(token)
+	
 def handle_formals(token):
-	print("formal handling " + token)
-	throw_error("Parser not defined for this syntax") # TODO
+	global expecting
+	global current_obj
+	global current_obj_type
+	
+	if ')' in token:
+		if ')' is token:
+			expecting = expecting[1:] # rest of formals is empty
+			# TODO add these formals to the previous object
+		else:
+			read_tight_code(token)
+	
+	if ',' in token:
+		if ',' is token:
+			expecting.insert(0, "<formal>") # expect another formal
+		else:
+			read_tight_code(token)
+			
+	if is_type(token):
+		if current_obj_type == "Formal":
+			throw_error("Encountered type " + token \
+				+ " while parsing a <formal> that already had a type " + str(current_obj.type))
+		else:
+			expecting.insert(0, "<formal>")
+			if current_obj:
+				push_stack()
+			current_obj = Formal()
+			current_obj_type = "Formal"
+			ast.append(current_obj) # TODO fix?
+			current_obj.set_type(token)
+	else:
+		throw_error("Encountered " + token + " while expecting a <type> for a <formal>")
+			
+
+	
+def handle_formal(token):
+	global current_obj
+	assert_obj_type("Formal")
+	if not is_id(token):
+		throw_error("Encountered " + token + " while expecting an <id>")
+	else:
+		current_obj.set_id(token)
+		# add formal to its parent object
+		formal_obj = current_obj
+		pop_stack()
+		current_obj.add_formal(formal_obj)
+
 		
 def handle_protodec(token):
 	global expecting
@@ -539,6 +621,7 @@ TOKEN_TO_HANDLER = {
 "<funprotos>" : handle_funprotos,
 "<funproto>" : handle_funproto,
 "<formals>" : handle_formals,
+"<formal>" : handle_formal,
 }			
 			
 def main():

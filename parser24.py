@@ -4,6 +4,8 @@ CS 7400
 Quirk 24 Parser
 Author: Josh Miller
 """
+import traceback
+import copy
 
 SPACE = 0x20
 LF = 0xa
@@ -158,11 +160,16 @@ def throw_error(reason, addl=""):
 	global line_count
 	global illegal
 	global error_msg
+	if illegal and error_msg: # already have an error
+		return
 	illegal = True
 	error_line = line_count
 	error_msg = reason + " in line " + str(error_line)
 	if addl:
 		error_msg += "\n" + addl
+	if DEBUG:
+		print("Traceback:")
+		print(traceback.extract_stack())
 
 def run(input, output):
 	import os
@@ -194,7 +201,7 @@ def run(input, output):
 			
 
 def is_valid_char(c, mustbe=[], cantbe=[]):
-	restrictions = cantbe
+	restrictions = copy.copy(cantbe)
 	if mustbe != []:
 		options = ["digit", "lower", "upper", "_", "print"]
 		for opt in options:
@@ -283,18 +290,16 @@ def tokenize_line(line):
 		elif is_valid_char(c):
 			current_token += c # TODO anything else?
 		else:
-			throw_error("Forbidden character: " + str(c))
+			throw_error("Forbidden character: \'" + str(c) + "\'")
 			break
 	
 # Find the handler to the token, a handler handler
 def add_to_ast(token):
 	global expecting
+	if illegal:
+		return
 	if DEBUG:
 		print("DEBUG: Tokenizing <" + token + "> while expecting " + expecting[0])
-	if illegal:
-		if DEBUG:
-			print("(illegal)")
-		return
 	try:
 		handler = TOKEN_TO_HANDLER[expecting[0]]
 		handler(token)
@@ -331,6 +336,7 @@ def handle_classdecs(token):
 def handle_classdec(token):
 	global expecting
 	pass # TODO, see protodec for guide
+	throw_error("Parser not defined for this operation.")
 	
 def handle_funprotos(token):
 	global expecting
@@ -346,6 +352,7 @@ def handle_funprotos(token):
 def handle_funproto(token):
 	global expecting
 	pass # TODO, see protodec for guide
+	throw_error("Parser not defined for this operation.")
 		
 def handle_protodec(token):
 	# TODO think through this logic, check to make sure it works

@@ -30,6 +30,8 @@ ast = []
 line_count = 0
 current_obj = None
 current_obj_type = None
+object_stack = [None]
+object_type_stack = ["None"]
 DEBUG = True
 
 
@@ -102,7 +104,8 @@ class Funproto:
 		self.id = None
 		self.rtype = None
 		self.typevars = []
-		self.funprotos = []
+		self.formals = []
+		self.expecting_more_vars = False
 		
 	def set_id(self, i):
 		self.id = i
@@ -113,8 +116,17 @@ class Funproto:
 	def add_formals(self, f):
 		self.formals.append(f)
 		
+	def set_expecting(self, b):
+		self.expecting_more_vars = b
+		
 	def set_rtype(self, r):
 		self.rtype = r
+		
+	def __str__(self):
+		return "<Funproto; id=" + str(self.id) + ", rtype=" \
+			+ str(self.rtype) + ", typevars=" + str(self.typevars) \
+			+ ",formals=" + str(self.formals) + ",expecting more?=" \
+			+ str(self.expecting_more_vars) + ">"
 		
 class Class:
 	
@@ -293,6 +305,23 @@ def tokenize_line(line):
 			throw_error("Forbidden character: \'" + str(c) + "\'")
 			break
 	
+# if current obj handling is None, pop from stack
+def check_current_obj():
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_stack_type
+	if current_obj == None:
+		if object_stack[0] != None:
+			# pop object stack
+			current_obj = object_stack[0]
+			current_obj_type = object_type_stack[0]
+			object_stack = object_stack[1:]
+			object_stack_type = object_stack_type[1:]
+			if DEBUG:
+				print("Object stack popped. Current obj = " + current_obj_type)
+				print("Remaining obj stack = " + str(object_stack_type))
+	
 # Find the handler to the token, a handler handler
 def add_to_ast(token):
 	global expecting
@@ -300,6 +329,9 @@ def add_to_ast(token):
 		return
 	if DEBUG:
 		print("DEBUG: Tokenizing <" + token + "> while expecting " + expecting[0])
+	
+	check_current_obj()
+	
 	try:
 		handler = TOKEN_TO_HANDLER[expecting[0]]
 		handler(token)
@@ -313,8 +345,15 @@ def handle_protodecs(token):
 	global expecting
 	global current_obj
 	global current_obj_type
+	global object_stack
+	global object_stack_type
 	if token == "protocol":
 		expecting.insert(0, "<protodec>")
+		if current_obj:
+			object_stack.insert(0, current_obj)
+			object_type_stack.insert(0, current_obj_type)
+			current_obj = None
+			current_obj_type = None
 		current_obj = Protocol()
 		current_obj_type = "Protocol"
 		ast.append(current_obj)
@@ -324,8 +363,17 @@ def handle_protodecs(token):
 		
 def handle_classdecs(token):
 	global expecting
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_stack_type
 	if token == "class":
 		expecting.insert(0, "<classdec>")
+		if current_obj:
+			object_stack.insert(0, current_obj)
+			object_type_stack.insert(0, current_obj_type)
+			current_obj = None
+			current_obj_type = None
 		current_obj = Class()
 		current_obj_type = "Class"
 		ast.append(current_obj)
@@ -336,12 +384,21 @@ def handle_classdecs(token):
 def handle_classdec(token):
 	global expecting
 	pass # TODO, see protodec for guide
-	throw_error("Parser not defined for this operation.")
+	throw_error("Parser not defined for this syntax.")
 	
 def handle_funprotos(token):
 	global expecting
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_stack_type
 	if token == "fun":
 		expecting.insert(0, "<funproto>")
+		if current_obj:
+			object_stack.insert(0, current_obj)
+			object_type_stack.insert(0, current_obj_type)
+			current_obj = None
+			current_obj_type = None
 		current_obj = Funproto()
 		current_obj_type = "Funproto"
 		ast.append(current_obj)
@@ -351,11 +408,22 @@ def handle_funprotos(token):
 	
 def handle_funproto(token):
 	global expecting
-	pass # TODO, see protodec for guide
-	throw_error("Parser not defined for this operation.")
+	if not assert_obj_type("Funproto"):
+		throw_error("Funproto expected")
+	else:
+		if current_obj.id == None:
+			# expect id first
+			if is_id(token):
+				current_obj.set_id(token)
+			else:
+				throw_error("Encountered " + token + " while expecting an <id> for a <funproto>")
+		else:
+			throw_error("Parser not defined for this syntax.")
+	
+	
+	
 		
 def handle_protodec(token):
-	# TODO think through this logic, check to make sure it works
 	global expecting
 	global current_obj
 	if assert_obj_type("Protocol"):
@@ -397,9 +465,8 @@ def handle_protodec(token):
 		else:
 			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
 	else:
-		throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
-	print(str(current_obj))
-		
+		throw_error("Protocol expected")
+	
 def assert_obj_type(t):
 	#global current_obj_type
 	if t == current_obj_type:

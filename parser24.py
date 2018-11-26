@@ -70,6 +70,7 @@ class Protocol:
 		self.extends = []
 		self.typevars = []
 		self.funprotos = []
+		self.expecting_more_vars = False
 		
 	def set_typeid(self, i):
 		self.typeid = i
@@ -77,12 +78,21 @@ class Protocol:
 	def add_typevar(self, v):
 		self.typevars.append(v)
 		
+	def set_expecting(self, b):
+		self.expecting_more_vars = b
+		
 	# must be a typeapp
 	def add_extends(self, t):
 		self.extends.append(t)
 		
 	def add_funproto(self, f):
 		self.funprotos.append(f)
+		
+	def __str__(self):
+		return "<Protocol; id=" + str(self.typeid) + ", extends=" \
+			+ str(self.extends) + ", typevars=" + str(self.typevars) \
+			+ ",funprotos=" + str(self.funprotos) + ",expecting more?=" \
+			+ str(self.expecting_more_vars) + ">"
 
 class Funproto:
 
@@ -144,17 +154,20 @@ class Block:
 		
 		
 
-def throw_error(reason):
+def throw_error(reason, addl=""):
 	global line_count
+	global illegal
+	global error_msg
 	illegal = True
 	error_line = line_count
-	error_msg = reason + " encountered in line " + str(error_line)
-	# TODO if token is missing whitespace,
-	#	something like {token} give a helpful message e.g. did you mean { token }
+	error_msg = reason + " in line " + str(error_line)
+	if addl:
+		error_msg += "\n" + addl
 
 def run(input, output):
 	import os
 	global line_count
+	global illegal
 	
 	with open(input, 'r') as file:
 		line = file.readline()
@@ -171,10 +184,13 @@ def run(input, output):
 		else:
 			file.write(ast_to_string(ast, "", 0))
 
-	
 	if illegal:
-		print("Encountered syntax error while parsing " + str(input))
+		print("Encountered syntax error while parsing " + str(input) + ":")
 		print(error_msg)
+		if DEBUG: # addl debug info
+			print("Expecting: " + str(expecting))
+			print("Current object type: " + str(current_obj_type))
+			print("Current object: " + str(current_obj))
 			
 
 def is_valid_char(c, mustbe=[], cantbe=[]):
@@ -201,21 +217,21 @@ def is_id(token):
 	valid = is_valid_char(token[0], mustbe=["lower"])
 	if len(token) > 1:
 		for c in token[1:]:
-			valid = valid and is_valid_char(c, cantbe["print"]) # subsequent
+			valid = valid and is_valid_char(c, cantbe=["print"]) # subsequent
 	return valid
 	
 def is_tvar(token):
 	valid = is_valid_char(token[0], mustbe=["upper"])
 	if len(token) > 1:
 		for c in token[1:]:
-			valid = valid and is_valid_char(c, cantbe["print"]) # subsequent
+			valid = valid and is_valid_char(c, cantbe=["print"]) # subsequent
 	return valid
 	
 def is_intliteral(token):
 	valid = is_valid_char(token[0], mustbe["digit"])
 	if len(token) > 1:
 		for c in token[1:]:
-			valid = valid and is_valid_char(c, mustbe["digit"])
+			valid = valid and is_valid_char(c, mustbe=["digit"])
 	return valid
 	
 def is_stringliteral(token):
@@ -247,7 +263,7 @@ def is_literal(token):
 	
 			
 def tokenize_line(line):
-	if DEBUG:
+	if DEBUG and not illegal:
 		print("DEBUG: INPUT: " + line)
 	current_token = ""
 	for c in line:	
@@ -274,15 +290,24 @@ def tokenize_line(line):
 def add_to_ast(token):
 	global expecting
 	if DEBUG:
-		print("DEBUG: Tokenizing " + token)
+		print("DEBUG: Tokenizing <" + token + "> while expecting " + expecting[0])
+	if illegal:
+		if DEBUG:
+			print("(illegal)")
+		return
 	try:
-		TOKEN_TO_HANDLER[expecting[0]](token)
+		handler = TOKEN_TO_HANDLER[expecting[0]]
+		handler(token)
+		if DEBUG:
+			print("Token <" + token + "> sent to " + str(handler))
 	except KeyError as e:
 		print("Parser error: No handler for token " + token + " while expecting " + expecting[0])
 		exit(1)
 	
 def handle_protodecs(token):
 	global expecting
+	global current_obj
+	global current_obj_type
 	if token == "protocol":
 		expecting.insert(0, "<protodec>")
 		current_obj = Protocol()
@@ -334,41 +359,46 @@ def handle_protodec(token):
 			else:
 				throw_error("Encountered " + token + " while expecting a typeid for a protodec")
 		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
-		elif ',' in token:
-				expecting.insert(0, "<tvar>") # if we get a comma, tvar must come next
-				for raw_token in token.split(','):
-					t = raw_token.strip()
-					handle_protodec(t)
-				else: # no comma
-					pass # TODO
-		elif is_tvar(token):
-			pass # TODO
+		elif ',' == token: # expect another tvar
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Too many commas in typevars?")
+			current_obj.set_expecting(True)
+		elif ',' in token: # comma is part of another token
+			for raw_token in token.split(','):
+				t = raw_token.strip() # double check no whitespace
+				add_to_ast(t)
+				add_to_ast(',') # splitting on commas, put commas back
+		elif is_tvar(token): # no comma
+			current_obj.add_typevar(token)
+			current_obj.set_expecting(False)
 		elif token == "extends":
-			expecting.insert(0, "<extends>")
-			pass # TODO
-		# TODO if 'char' is only character, handle it instead of splitting
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				expecting.insert(0, "<extends>")
 		elif '{' in token:
-			for raw_token in token.split(','):
-				t = raw_token.strip()
-				handle_protodec(t) # TODO, funprotos expected last
-		elif '}' in token:
-			for raw_token in token.split(','):
-				t = raw_token.strip()
-				handle_protodec(t) # TODO, funprotos expected last
-				# TODO end of Protodec
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				if '{' == token:
+					expecting = expecting[1:] # rest of protodec is just funprotos
+					expecting.insert(0, "<funprotos>")
+				else:
+					for raw_token in token.split('{'):
+						t = raw_token.strip()
+						add_to_ast(t) # let handler handler handle it
 		else:
-			# TODO more detail about how much information we know about the proto so far
-			throw_error("Encountered " + token + " while parsing a " + current_obj_type)
-			
+			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
 	else:
-		throw_error("Encountered " + token + " while parsing a " + current_obj_type)
-
+		throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
+	print(str(current_obj))
+		
 def assert_obj_type(t):
 	#global current_obj_type
 	if t == current_obj_type:
 		return True
 	else:
-		throw_error("Encountered a " + t + " while expecting a " + current_obj_type)
+		throw_error("Encountered a " + t + " while expecting a " + str(current_obj_type))
 		return False
 		
 	

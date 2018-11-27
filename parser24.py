@@ -51,10 +51,6 @@ DEBUG = True
 #    block
 #    localdec
 #    vardec
-#    type
-#    primtype
-#    rtype
-#    arrow
 #    stm
 #    exp
 #    lhs
@@ -198,7 +194,7 @@ def throw_error(reason, addl=""):
 		error_msg += "\n" + addl
 	if DEBUG:
 		print("DEBUG: Error traceback:")
-		for l in traceback.extract_stack():
+		for l in traceback.extract_stack()[1:-1]:
 			print("------ " + str(l))
 
 def run(input, output):
@@ -363,13 +359,13 @@ def add_to_ast(token):
 		print("Parser error: No handler for token " + token + " while expecting " + expecting[0])
 		exit(1)
 
-# handle token inside parens, e.g. (int or (string)
+# handle tokens that have less whitespace than we hope for, such as (int) or :void
+# puts space between all special characters
 def read_tight_code(token):
-	tight_tokens = ['(', ')', '{', '}', ',']
+	tight_tokens = ['(', ')', '{', '}', ',', ':', ';']
 	new_line = token
 	for t in tight_tokens:
 		new_line = new_line.replace(t, " " + t + " ")
-	
 	if DEBUG:
 		print("DEBUG: " + token + " loosened to " + new_line)
 	tokenize_line(new_line)
@@ -457,8 +453,15 @@ def handle_funproto(token):
 					expecting.insert(0, "<formals>")
 				else:
 					read_tight_code(token)
+		elif ':' in token:
+			if ':' is token:
+				expecting.insert(0, "<rtype>")
+			else:
+				read_tight_code(token)
+		elif ';' is token:
+			expecting = expecting[1:] # end of fun proto
 		else:
-			throw_error("Parser not defined for this syntax") # TODO
+			throw_error("Syntax error in <funproto>", addl="Did you forget a semicolon or parenthesis?")
 		
 # push current object to stack
 def push_stack():
@@ -490,9 +493,18 @@ def is_type(token): # TODO more needed here
 	# TODO can be function ( ( <types> ) ARROW <rtype> )
 	return valid
 	
-	
 def is_rtype(token):
 	return token is "void" or is_type(token)
+		
+def handle_rtype(token):
+	global expecting
+	if ':' in token or ')' in token or ';' in token:
+		read_tight_code(token)
+	elif not is_rtype(token):
+		throw_error("Encountered " + token + " while expecting <rtype>")
+	else:
+		current_obj.set_rtype(token)
+		expecting = expecting[1:] # rtype finished
 	
 def handle_formals(token):
 	global expecting
@@ -504,7 +516,6 @@ def handle_formals(token):
 			if expecting[0] == "<formals-rest>":
 				throw_error("Expecting another <formal>")
 			expecting = expecting[1:] # rest of formals is empty
-			# TODO add these formals to the previous object
 		else:
 			read_tight_code(token)
 	
@@ -644,6 +655,7 @@ TOKEN_TO_HANDLER = {
 "<formals>" : handle_formals,
 "<formals-rest>" : handle_formals,
 "<formal>" : handle_formal,
+"<rtype>" : handle_rtype,
 }			
 			
 def main():

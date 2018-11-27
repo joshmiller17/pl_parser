@@ -365,8 +365,10 @@ def add_to_ast(token):
 
 # handle token inside parens, e.g. (int or (string)
 def read_tight_code(token):
-	new_line = token.replace("(", " ( ")
-	new_line = new_line.replace(")", " ) ")
+	tight_tokens = ['(', ')', '{', '}', ',']
+	new_line = token
+	for t in tight_tokens:
+		new_line = new_line.replace(t, " " + t + " ")
 	print(token + " loosened to " + new_line) # TODO remove
 	tokenize_line(new_line)
 		
@@ -472,7 +474,7 @@ def pop_stack():
 	global current_obj
 	global current_obj_type
 	global object_stack
-	global object_stack_type
+	global object_type_stack
 	current_obj = object_stack[0]
 	current_obj_type = object_type_stack[0]
 	object_stack = object_stack[1:]
@@ -529,13 +531,20 @@ def handle_formal(token):
 	global current_obj
 	assert_obj_type("Formal")
 	if not is_id(token):
-		throw_error("Encountered " + token + " while expecting an <id>")
+		if ',' in token:
+			if ',' is token:
+				throw_error("Encountered " + token + " while expecting an <id>")
+			else:
+				read_tight_code(token)
+		else:
+			throw_error("Encountered " + token + " while expecting an <id>")
 	else:
 		current_obj.set_id(token)
 		# add formal to its parent object
 		formal_obj = current_obj
 		pop_stack()
 		current_obj.add_formal(formal_obj)
+		
 
 		
 def handle_protodec(token):

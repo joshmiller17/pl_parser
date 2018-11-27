@@ -197,7 +197,7 @@ def throw_error(reason, addl=""):
 	if addl:
 		error_msg += "\n" + addl
 	if DEBUG:
-		print("Error traceback:")
+		print("DEBUG: Error traceback:")
 		for l in traceback.extract_stack():
 			print("------ " + str(l))
 
@@ -357,7 +357,7 @@ def add_to_ast(token):
 	try:
 		handler = TOKEN_TO_HANDLER[expecting[0]]	
 		if DEBUG:
-			print("Token <" + token + "> sent to " + str(handler))	
+			print("DEBUG: Token <" + token + "> sent to " + str(handler))	
 		handler(token)
 	except KeyError as e:
 		print("Parser error: No handler for token " + token + " while expecting " + expecting[0])
@@ -369,7 +369,9 @@ def read_tight_code(token):
 	new_line = token
 	for t in tight_tokens:
 		new_line = new_line.replace(t, " " + t + " ")
-	print(token + " loosened to " + new_line) # TODO remove
+	
+	if DEBUG:
+		print("DEBUG: " + token + " loosened to " + new_line)
 	tokenize_line(new_line)
 		
 def handle_protodecs(token):
@@ -499,23 +501,27 @@ def handle_formals(token):
 	
 	if ')' in token:
 		if ')' is token:
+			if expecting[0] == "<formals-rest>":
+				throw_error("Expecting another <formal>")
 			expecting = expecting[1:] # rest of formals is empty
 			# TODO add these formals to the previous object
 		else:
 			read_tight_code(token)
 	
-	if ',' in token:
+	elif ',' in token:
 		if ',' is token:
-			expecting.insert(0, "<formal>") # expect another formal
+			expecting.insert(0, "<formals-rest>") # expect another formal
 		else:
-			read_tight_code(token)
-			
-	if is_type(token):
+			read_tight_code(token)		
+	elif is_type(token):
 		if current_obj_type == "Formal":
 			throw_error("Encountered type " + token \
 				+ " while parsing a <formal> that already had a type " + str(current_obj.type))
 		else:
-			expecting.insert(0, "<formal>")
+			if expecting[0] == "<formals-rest>":
+				expecting[0] = "<formal>"
+			else:
+				expecting.insert(0, "<formal>")
 			if current_obj:
 				push_stack()
 			current_obj = Formal()
@@ -529,9 +535,13 @@ def handle_formals(token):
 	
 def handle_formal(token):
 	global current_obj
+	global expecting
 	assert_obj_type("Formal")
+	
 	if not is_id(token):
-		if ',' in token:
+		if ')' in token:
+			read_tight_code(token)
+		elif ',' in token:
 			if ',' is token:
 				throw_error("Encountered " + token + " while expecting an <id>")
 			else:
@@ -632,6 +642,7 @@ TOKEN_TO_HANDLER = {
 "<funprotos>" : handle_funprotos,
 "<funproto>" : handle_funproto,
 "<formals>" : handle_formals,
+"<formals-rest>" : handle_formals,
 "<formal>" : handle_formal,
 }			
 			

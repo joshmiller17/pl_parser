@@ -544,6 +544,8 @@ def handle_formal(token):
 		formal_obj = current_obj
 		pop_stack()
 		current_obj.add_formal(formal_obj)
+		expecting = expecting[1:] # formal finished
+
 		
 
 		

@@ -381,9 +381,12 @@ def handle_protodecs(token):
 		current_obj = Protocol()
 		current_obj_type = "Protocol"
 		ast.append(current_obj) # TODO fix?
+	elif '}' in token:
+		if '}' is token:
+			expecting = expecting[1:] # rest of protodecs is empty
 	else:
-		expecting = expecting[1:] # rest of protodecs is empty
-		add_to_ast(token) # find a new handler
+		throw_error("Syntax error while parsing <protodecs>")
+		
 		
 def handle_classdecs(token):
 	global expecting
@@ -460,6 +463,9 @@ def handle_funproto(token):
 				read_tight_code(token)
 		elif ';' is token:
 			expecting = expecting[1:] # end of fun proto
+			fp_obj = current_obj
+			pop_stack()
+			current_obj.add_funproto(fp_obj)
 		else:
 			throw_error("Syntax error in <funproto>", addl="Did you forget a semicolon or parenthesis?")
 		
@@ -568,8 +574,6 @@ def handle_formal(token):
 		expecting = expecting[1:] # formal finished
 
 		
-
-		
 def handle_protodec(token):
 	global expecting
 	global current_obj
@@ -607,6 +611,11 @@ def handle_protodec(token):
 					expecting.insert(0, "<funprotos>")
 				else:
 					throw_error("Unknown token " + token, addl="Perhaps your { needs a space")
+		elif '}' in token:
+			if '}' is token:
+				expecting = expecting[1:]
+			else:
+				read_tight_code(token)
 		else:
 			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
 	else:

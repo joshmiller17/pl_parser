@@ -381,12 +381,10 @@ def handle_protodecs(token):
 		current_obj = Protocol()
 		current_obj_type = "Protocol"
 		ast.append(current_obj) # TODO fix?
-	elif '}' in token:
-		if '}' is token:
-			expecting = expecting[1:] # rest of protodecs is empty
 	else:
-		throw_error("Syntax error while parsing <protodecs>")
-		
+		# no more protodecs, find a new handler
+		expecting = expecting[1:]
+		add_to_ast(token)
 		
 def handle_classdecs(token):
 	global expecting
@@ -607,7 +605,6 @@ def handle_protodec(token):
 				throw_error("Syntax error", addl="Expecting another typevar")
 			else:
 				if '{' == token:
-					expecting = expecting[1:] # rest of protodec is just funprotos
 					expecting.insert(0, "<funprotos>")
 				else:
 					throw_error("Unknown token " + token, addl="Perhaps your { needs a space")

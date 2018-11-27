@@ -61,6 +61,7 @@ DEBUG = True
 #    factor
 #    factor-rest
 #    extends
+#    implements
 #    floatliteral
 #    exponent
 
@@ -150,6 +151,7 @@ class Class:
 		self.funprotos = []
 		self.init_formals = []
 		self.block = None
+		self.expecting_more_vars = False
 		
 	def set_id(self, i):
 		self.id = i
@@ -160,6 +162,9 @@ class Class:
 		
 	def add_typevar(self, v):
 		self.typevars.append(v)
+		
+	def set_expecting(self, b):
+		self.expecting_more_vars = b
 		
 	def add_formal_to_init(self, f):
 		self.init_formals.append(f)
@@ -403,8 +408,49 @@ def handle_classdecs(token):
 		
 def handle_classdec(token):
 	global expecting
-	pass # TODO, see protodec for guide
-	throw_error("Parser not defined for this syntax") # TODO
+	global current_obj
+	if assert_obj_type("Class"):
+		# expect id first
+		if current_obj.id == None:
+			if is_id(token):
+				current_obj.set_id(token)
+			else:
+				throw_error("Encountered " + token + " while expecting a typeid for a <classdec>")
+		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
+		elif ',' == token: # expect another tvar
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Too many commas in typevars?")
+			current_obj.set_expecting(True)
+		elif ',' in token: # comma is part of another token
+			for raw_token in token.split(','):
+				t = raw_token.strip() # double check no whitespace
+				add_to_ast(t)
+				add_to_ast(',') # splitting on commas, put commas back
+		elif is_tvar(token): # no comma
+			current_obj.add_typevar(token)
+			current_obj.set_expecting(False)
+		elif token == "implements":
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				expecting.insert(0, "<implements>")
+		elif '{' in token:
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				if '{' == token:
+					expecting.insert(0, "<classbody>")
+				else:
+					throw_error("Syntax error while parsing a <classdec>")
+		elif '}' in token:
+			if '}' is token:
+				expecting = expecting[1:]
+			else:
+				read_tight_code(token)
+		else:
+			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
+	else:
+		throw_error("Class expected")
 	
 def handle_funprotos(token):
 	global expecting
@@ -581,7 +627,7 @@ def handle_protodec(token):
 			if is_id(token):
 				current_obj.set_typeid(token)
 			else:
-				throw_error("Encountered " + token + " while expecting a typeid for a protodec")
+				throw_error("Encountered " + token + " while expecting a typeid for a <protodec>")
 		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
 		elif ',' == token: # expect another tvar
 			if current_obj.expecting_more_vars:
@@ -607,7 +653,7 @@ def handle_protodec(token):
 				if '{' == token:
 					expecting.insert(0, "<funprotos>")
 				else:
-					throw_error("Unknown token " + token, addl="Perhaps your { needs a space")
+					throw_error("Syntax error while parsing a <protodec>")
 		elif '}' in token:
 			if '}' is token:
 				expecting = expecting[1:]

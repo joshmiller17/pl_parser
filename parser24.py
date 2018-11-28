@@ -710,7 +710,7 @@ def handle_bodydecs(token):
 			push_stack()
 		current_obj = Globaldec()
 		current_obj_type = "Globaldec"
-	elif is_type(token)
+	elif is_type(token):
 		expecting.insert(0, "<fielddec>")
 		if current_obj:
 			push_stack()
@@ -890,6 +890,64 @@ def handle_fielddec(token):
 				read_tight_code()
 		
 
+def handle_fundec(token):
+	global expecting
+	global current_obj
+	if not assert_obj_type("Fundec"):
+		throw_error("Fundec expected")
+	else:
+		if current_obj.id == None:
+			# expect id first
+			if is_id(token):
+				current_obj.set_id(token)
+			else:
+				throw_error("Encountered " + token + " while expecting an <id> for a <fundec>")
+		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
+		elif ',' == token: # expect another tvar
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Too many commas in typevars?")
+			current_obj.set_expecting(True)
+		elif ',' in token: # comma is part of another token
+			for raw_token in token.split(','):
+				t = raw_token.strip() # double check no whitespace
+				add_to_ast(t)
+				add_to_ast(',') # splitting on commas, put commas back
+		elif is_tvar(token): # no comma
+			current_obj.add_typevar(token)
+			current_obj.set_expecting(False)
+		elif '(' in token:
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				if '(' == token:
+					#expecting = expecting[1:] # rest of fundec is formals, possibly rtype
+					expecting.insert(0, "<formals>")
+				else:
+					read_tight_code(token)
+		elif ':' in token:
+			if ':' is token:
+				expecting.insert(0, "<rtype>")
+			else:
+				read_tight_code(token)
+		elif '{' in token:
+			if '{' is token:
+				expecting.insert(0, "<block>")
+				if current_obj:
+					push_stack()
+				current_obj = Block()
+				current_obj_type = "Block"
+			else:
+				read_tight_code()
+		elif '}' is token:
+			expecting = expecting[1:] # end of fundec
+			fd_obj = current_obj
+			pop_stack()
+			current_obj.add_dec(fd_obj) # FIXME?
+		else:
+			throw_error("Syntax error in <fundec>")
+		
+		
+		
 def handle_exp(token, end):
 	throw_error("Parser not defined for syntax <exp>") # TODO
 	if token == end:
@@ -1128,9 +1186,11 @@ TOKEN_TO_HANDLER = {
 "<implements>" : handle_implements,
 "<implements-rest>" : handle_implements,
 "<classbody>" : handle_classbody,
+"<bodydecs>" : handle_bodydecs,
 "<constdec>" : handle_constdec,
 "<globaldec>" : handle_globaldec,
 "<fielddec>" : handle_fielddec,
+"<fundec>" : handle_fundec,
 "<exp-semi>" : handle_exp_semi,
 "<exp-paren>" : handle_exp_paren,
 "<exp-bracket>" : handle_exp_bracket,

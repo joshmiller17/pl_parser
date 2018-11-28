@@ -25,9 +25,8 @@ PRINTABLES = [" ", "!", "#", "$", "%", "&", "(", ")", "*", \
        "+", ",", "-", ".", "/", ":", ";", "<", "=", ">", "?", "@", "[", "]", "^", "{", "}", "~"]
 STM_REDIRECTS = {";" : "<stm-empty>", "if" : "<stm-if>", \
 			"while" : "<stm-while>", "for" : "<stm-for>", \
-			"return" : "<stm-ret>", "{" : "<stm-block>", \
+			"return" : "<stm-ret>", "{" : "<block>", \
 			"halt" : "<stm-halt>"}
-STM_REDIRECTS =    
 illegal = False
 error_line = 0
 error_msg = ""
@@ -185,9 +184,13 @@ class Block:
 	def __init__(self):
 		self.local_decs = []
 		self.stms = []
+		self.dec_phase = True
 		
 	def add_localdec(self, l):
 		self.local_decs.append(l)
+		
+	def end_decs(self):
+		self.dec_phase = False
 		
 	def add_stm(self, s):
 		self.stms.append(s)
@@ -631,14 +634,22 @@ def handle_classbody(token):
 	else:
 		if current_obj.expecting_formals:
 			throw_error("Expecting (<formals>) for <init> of <classbody>")
+		elif '{' in token:
+			if '{' is token:
+				expecting.insert(0, "<block>")
+				if current_obj:
+					push_stack()
+					current_obj = Block()
+					current_obj_type = "Block"
+			else:
+				read_tight_code()
+		# assume block handler adds the block to our obj and consumes }
 		else:
-			throw_error("Parser not defined for syntax <classbody>") # TODO
-			# ) handled by formals
-			# next should be block TODO { <localdecs> <stms> }
+			expecting.insert(0, "<bodydecs>")
 			# then bodydecs TODO   <constdec> or <globaldec> or <fielddec> or <fundec>
 			# finally if }, return, consume expecting, don't consume token
 	
-	# TODO add all this back to current obj
+	# TODO ensure added all this back to current obj
 	# -- add_block
 	# -- add_bodydec
 	
@@ -804,9 +815,9 @@ def handle_fielddec(token):
 				read_tight_code()
 		
 
-def handle_exp(token, end-token):
+def handle_exp(token, end):
 	throw_error("Parser not defined for syntax <exp>") # TODO
-	if token == end-token:
+	if token == end:
 		pass # TODO return constructed exp to prev object
 	
 def handle_exp_semi(token):
@@ -818,6 +829,31 @@ def handle_exp_paren(token):
 def handle_exp_bracket(token):
 	handle_exp(token, ']')
 
+def handle_block(token):
+	global expecting
+	global current_obj
+	if not assert_obj_type("Block"):
+		throw_error("Block expected")
+	else:
+		if current_obj.dec_phase:
+			if is_type(token):
+				expecting.insert(0, "<vardec>")
+				add_to_ast(token) # return to handler
+			elif "fun" is token:
+				expecting.insert(0, "<fundec>")
+				add_to_ast(token) # return to handler
+			else:
+				current_obj.end_decs()
+				add_to_ast(token) # return to handler
+		elif '}' in token: # stms expected until }
+			if '}' is token:
+				pass # TODO finish block, push back to prev obj
+			else:
+				read_tight_code()
+		else:
+			expecting.insert(0, "<stm>")
+	
+	
 # redirect to more specific stm handlers based on first token of stm
 def handle_stm(token):
 	global expecting
@@ -828,7 +864,25 @@ def handle_stm(token):
 				add_to_ast(token) # return to handler
 			else:
 				read_tight_code()
-		
+	
+def handle_stm_empty(token):
+		throw_error("Parser not defined for syntax <stm-empty>") # TODO
+
+def handle_stm_if(token):
+	throw_error("Parser not defined for syntax <stm-if>") # TODO
+
+def handle_stm_while(token):
+	throw_error("Parser not defined for syntax <stm-while>") # TODO
+	
+def handle_stm_for(token):
+	throw_error("Parser not defined for syntax <stm-for>") # TODO
+	
+def handle_stm_return(token):
+	throw_error("Parser not defined for syntax <stm-return>") # TODO
+
+def handle_stm_halt(token):
+	throw_error("Parser not defined for syntax <stm-halt>") # TODO
+	
 def handle_factor(token):
 	# check for factor-unop
 	for u in UNOPS:
@@ -1006,8 +1060,8 @@ TOKEN_TO_HANDLER = {
 "<stm-while>" : handle_stm_while,
 "<stm-for>" : handle_stm_for,
 "<stm-ret>" : handle_stm_return,
-"<stm-block>" : handle_stm_block,
 "<stm-halt>" : handle_stm_halt,
+"<block>" : handle_block,
 }			
 			
 def main():

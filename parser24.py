@@ -167,10 +167,10 @@ class Class:
 	def set_expecting(self, b):
 		self.expecting_more_vars = b
 		
-	def add_formal_to_init(self, f):
+	def add_formal(self, f):
 		self.init_formals.append(f)
 		
-	def add_block_to_init(self, b):
+	def add_block(self, b):
 		self.block = b
 		
 	def add_bodydec(self, b):
@@ -491,12 +491,19 @@ def handle_implements(token):
 			
 			
 def handle_classbody(token):
+	global expecting
 	# already took care of {
 	# now expecting ( <formals> ) <block> <bodydecs> }
+	if '(' in token:
+		if '(' is token:
+			expecting.insert(0, "<formals>")
+		else:
+			read_tight_code()
+	# next should be block
 	
 	# TODO add all this back to current obj
-	# -- add_formal_to_init
-	# -- add_block_to_init
+	# -- add_formal
+	# -- add_block
 	# -- add_bodydec
 	
 

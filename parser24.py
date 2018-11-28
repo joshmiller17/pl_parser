@@ -129,6 +129,41 @@ class Funproto:
 			+ ",formals=" + str(self.formals) + ",expecting more?=" \
 			+ str(self.expecting_more_vars) + ">"
 		
+
+class Fundec:
+
+	def __init__(self):
+		self.id = None
+		self.rtype = None
+		self.typevars = []
+		self.formals = []
+		self.block = None
+		self.expecting_more_vars = False
+		
+	def set_id(self, i):
+		self.id = i
+		
+	def add_typevar(self, v):
+		self.typevars.append(v)
+		
+	def set_block(self, b):
+		self.block = b
+
+	def add_formal(self, f):
+		self.formals.append(f)
+		
+	def set_expecting(self, b):
+		self.expecting_more_vars = b
+		
+	def set_rtype(self, r):
+		self.rtype = r
+		
+	def __str__(self):
+		return "<Fundec; id=" + str(self.id) + ", rtype=" \
+			+ str(self.rtype) + ", typevars=" + str(self.typevars) \
+			+ ",formals=" + str(self.formals) + ",expecting more?=" \
+			+ str(self.expecting_more_vars) + ", block=" + str(self.block) + ">"
+		
 class Formal:
 	
 	def __init__(self):
@@ -370,7 +405,7 @@ def assert_obj_type(t):
 	if t == current_obj_type:
 		return True
 	else:
-		throw_error("Encountered a " + t + " while expecting a " + str(current_obj_type))
+		throw_error("Parser Error: Encountered a " + t + " while expecting object of type " + str(current_obj_type))
 		return False
 		
 	
@@ -623,35 +658,75 @@ def handle_implements(token):
 def handle_classbody(token):
 	global expecting
 	global current_obj
+	global current_obj_type
 	# already took care of {
 	# now expecting ( <formals> ) <block> <bodydecs> }
-	if '(' in token:
-		if '(' is token:
-			current_obj.found_formals()
-			expecting.insert(0, "<formals>")
-		else:
-			read_tight_code(token)
+	if not assert_obj_type("Class"):
+		throw_error("Encountered a <classbody> while not parsing a <classdec>")
 	else:
-		if current_obj.expecting_formals:
-			throw_error("Expecting (<formals>) for <init> of <classbody>")
-		elif '{' in token:
-			if '{' is token:
-				expecting.insert(0, "<block>")
-				if current_obj:
-					push_stack()
+		if '(' in token:
+			if '(' is token:
+				current_obj.found_formals()
+				expecting.insert(0, "<formals>")
+			else:
+				read_tight_code(token)
+		else:
+			if current_obj.expecting_formals:
+				throw_error("Expecting (<formals>) for <init> of <classbody>")
+			elif '{' in token:
+				if '{' is token:
+					expecting.insert(0, "<block>")
+					if current_obj:
+						push_stack()
 					current_obj = Block()
 					current_obj_type = "Block"
+				else:
+					read_tight_code()
+			# assume block handler adds the block to our obj and consumes }
 			else:
-				read_tight_code()
-		# assume block handler adds the block to our obj and consumes }
-		else:
-			expecting.insert(0, "<bodydecs>")
-			# then bodydecs TODO   <constdec> or <globaldec> or <fielddec> or <fundec>
-			# finally if }, return, consume expecting, don't consume token
+				expecting.insert(0, "<bodydecs>")
+				# then bodydecs TODO   <constdec> or <globaldec> or <fielddec> or <fundec>
+				# finally if }, return, consume expecting, don't consume token (classdec will)
+
+		# TODO ensure added all this back to current obj
+		# -- add_block
+		# -- add_bodydec
+		
+# redirecter for figuring out which dec is next
+def handle_bodydecs(token):
+	global expecting
+	global current_obj
+	global current_obj_type
+	# each dec will add itself to obj, return on }
+	if "constant" == token:
+		expecting.insert(0, "<constdec>")
+		if current_obj:
+			push_stack()
+		current_obj = Constdec()
+		current_obj_type = "Constdec"
+	elif "static" == token:
+		expecting.insert(0, "<globaldec>")
+		if current_obj:
+			push_stack()
+		current_obj = Globaldec()
+		current_obj_type = "Globaldec"
+	elif is_type(token)
+		expecting.insert(0, "<fielddec>")
+		if current_obj:
+			push_stack()
+		current_obj = Fielddec()
+		current_obj_type = "Fielddec"
+		add_to_ast(token) # don't consume token
+	elif "fun" == token:
+		expecting.insert(0, "<fundec>")
+		if current_obj:
+			push_stack()
+		current_obj = Fundec()
+		current_obj_type = "Fundec"
+	elif '}' in token:
+		if '}' is token:
+			expecting = expecting[1:]
 	
-	# TODO ensure added all this back to current obj
-	# -- add_block
-	# -- add_bodydec
 	
 def handle_funprotos(token):
 	global expecting
@@ -748,7 +823,7 @@ def handle_constdec(token):
 				expecting = expecting[1:] # consume char, done
 				dec_obj = current_obj
 				pop_stack()
-				current_obj.add_formal(dec_obj)
+				current_obj.add_formal(dec_obj) # FIXME, should be add_dec
 			else:
 				read_tight_code()
 				
@@ -784,7 +859,7 @@ def handle_globaldec(token):
 				expecting = expecting[1:] # consume char, done
 				dec_obj = current_obj
 				pop_stack()
-				current_obj.add_formal(dec_obj)
+				current_obj.add_formal(dec_obj) # FIXME, should be add_dec
 			else:
 				read_tight_code()
 		
@@ -810,7 +885,7 @@ def handle_fielddec(token):
 				expecting = expecting[1:] # consume char, done
 				dec_obj = current_obj
 				pop_stack()
-				current_obj.add_formal(dec_obj)
+				current_obj.add_formal(dec_obj) # FIXME, should be add_dec
 			else:
 				read_tight_code()
 		
@@ -847,7 +922,11 @@ def handle_block(token):
 				add_to_ast(token) # return to handler
 		elif '}' in token: # stms expected until }
 			if '}' is token:
-				pass # TODO finish block, push back to prev obj
+				# add block to its parent object
+				block_obj = current_obj
+				pop_stack()
+				current_obj.add_block(block_obj)
+				expecting = expecting[1:] # block finished
 			else:
 				read_tight_code()
 		else:

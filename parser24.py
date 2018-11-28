@@ -152,6 +152,7 @@ class Class:
 		self.init_formals = []
 		self.block = None
 		self.expecting_more_vars = False
+		self.bodydecs = []
 		
 	def set_id(self, i):
 		self.id = i
@@ -169,8 +170,11 @@ class Class:
 	def add_formal_to_init(self, f):
 		self.init_formals.append(f)
 		
-	def add_block(self, b):
+	def add_block_to_init(self, b):
 		self.block = b
+		
+	def add_bodydec(self, b):
+		self.bodydecs.append(b)
 		
 class Block:
 	
@@ -184,7 +188,7 @@ class Block:
 	def add_stm(self, s):
 		self.stms.append(s)
 		
-		
+	
 
 def throw_error(reason, addl=""):
 	global line_count
@@ -202,6 +206,11 @@ def throw_error(reason, addl=""):
 		for l in traceback.extract_stack()[1:-1]:
 			print("------ " + str(l))
 
+			
+# TODO
+#def token_lookahead():
+	
+			
 def run(input, output):
 	import os
 	global line_count
@@ -433,10 +442,12 @@ def handle_classdec(token):
 			if current_obj.expecting_more_vars:
 				throw_error("Syntax error", addl="Expecting another typevar")
 			else:
-				expecting.insert(0, "<implements>")
+				expecting.insert(0, "<implements-rest>")
 		elif '{' in token:
 			if current_obj.expecting_more_vars:
 				throw_error("Syntax error", addl="Expecting another typevar")
+			elif len(current_obj.implements) < 1:
+				throw_error("Class " + current_obj.id + " must implement <typeapps>")
 			else:
 				if '{' == token:
 					expecting.insert(0, "<classbody>")
@@ -444,13 +455,51 @@ def handle_classdec(token):
 					throw_error("Syntax error while parsing a <classdec>")
 		elif '}' in token:
 			if '}' is token:
-				expecting = expecting[1:]
+				expecting = expecting[1:] # consume token, done with classdec
 			else:
 				read_tight_code(token)
 		else:
 			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
 	else:
-		throw_error("Class expected")
+		throw_error("Syntax error while parsing a <classdec>")
+	
+def handle_implements(token):
+	global expecting
+	global current_obj
+	if expecting[0] == "<implements-rest>":
+		if ',' in token:
+			if ',' == token:
+				throw_error("Syntax error while parsing <typeapps> of a <classdec>")
+			else:
+				read_tight_code()
+		else:
+			if is_typeapp(token):
+				current_obj.add_implements(token)
+				expecting[0] = "<implements>"
+			else:
+				throw_error("Encountered " + token + " while expecting a <typeapp> for Class " + current_obj.id)
+	elif expecting[0] == "<implements>":
+		# expecting ',' or end of implements here
+		if ',' in token:
+			if ',' == token:
+				expecting[0] = "<implements-rest>"
+			else:
+				read_tight_code()
+		else:
+			expecting = expecting[1:]
+			add_to_ast(token) # return to handler
+			
+			
+def handle_classbody(token):
+	# already took care of {
+	# now expecting ( <formals> ) <block> <bodydecs> }
+	
+	# TODO add all this back to current obj
+	# -- add_formal_to_init
+	# -- add_block_to_init
+	# -- add_bodydec
+	
+
 	
 def handle_funprotos(token):
 	global expecting
@@ -694,7 +743,7 @@ def ast_to_string(ast, out, indent_level):
 	out += ")"
 	return out
 			
-			
+
 
 
 TOKEN_TO_HANDLER = { 
@@ -708,6 +757,9 @@ TOKEN_TO_HANDLER = {
 "<formals-rest>" : handle_formals,
 "<formal>" : handle_formal,
 "<rtype>" : handle_rtype,
+"<implements>" : handle_implements,
+"<implements-rest>" : handle_implements,
+"<classbody>" : handle_classbody,
 }			
 			
 def main():

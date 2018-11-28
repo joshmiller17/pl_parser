@@ -39,31 +39,22 @@ DEBUG = True
 
 
 # TODO
-#  handlers for:
 
-# TODO
+# EXPRESSIONS
+#    factor, factor-rest, etc
+#    simple is (term (addop simple)*) -- any terms joined by addops
+#    term: a term is a (factor (mulop factor)*) -- any factors joined by mulops
+#    disjunct is (conjunct (andop disjunct)*) -- any conjuncts joined by andop
+#    conjunct is (simple (relop simple)*) -- any simples joined by relops
+#    lhs is (disjunct (orop lhs)*) -- any disjuncts joined by orops
+#    exp is lhs (assignop exp)*
 
-#    factor
-#    factor-rest
 
-#    simple
-#    term
-
-
-
-#    disjunct
-#    conjunct
-#    lhs
-
-#    exp
 #    vardec
 #    stm
 #    block
 #    fundec
 #    localdec
-
-
-
 #    extends
 #    implements
 #    floatliteral
@@ -636,7 +627,7 @@ def handle_classbody(token):
 		if current_obj.expecting_formals:
 			throw_error("Expecting (<formals>) for <init> of <classbody>")
 		else:
-			throw_error("Parser not defined for syntax <classbody>")
+			throw_error("Parser not defined for syntax <classbody>") # TODO
 			# ) handled by formals
 			# next should be block TODO { <localdecs> <stms> }
 			# then bodydecs TODO   <constdec> or <globaldec> or <fielddec> or <fundec>
@@ -807,6 +798,57 @@ def handle_fielddec(token):
 			else:
 				read_tight_code()
 		
+
+def handle_exp(token):
+	throw_error("Parser not defined for syntax <exp>") # TODO
+
+		
+def handle_factor(token):
+	# check for factor-unop
+	for u in UNOPS:
+		if u in token:
+			if u is token:
+				expecting[0] = "<factor-unop>"
+				add_to_ast(token) # return to handler
+				return
+			else:
+				read_tight_code()
+	if is_literal(token):
+		expecting[0] = "<factor-lit>"
+		add_to_ast(token) # return to handler
+	elif token == "new":
+		expecting[0] = "<factor-new>"
+		add_to_ast(token) # return to handler
+	elif token == "lambda":
+		expecting[0] = "<factor-lam>"
+		add_to_ast(token) # return to handler
+	elif '(' in token:
+		if '(' is token:
+			expecting[0] = "<factor-exp>"
+			# consume (
+		else:
+			read_tight_code()
+	elif is_id(token):
+		expecting[0] = "<factor-id>"
+		add_to_ast(token)
+	else:
+		throw_error("Syntax error while parsing <factor>")
+			
+def handle_factor_unop(token):
+	throw_error("Parser not defined for syntax <factor-unop>") # TODO
+	
+def handle_factor_lit(token):
+	throw_error("Parser not defined for syntax <factor-lit>") # TODO
+	
+def handle_factor_lam(token):
+	throw_error("Parser not defined for syntax <factor-lam>") # TODO
+	
+def handle_factor_exp(token):
+	throw_error("Parser not defined for syntax <factor-exp>") # TODO
+	
+def handle_factor_id(token):
+	throw_error("Parser not defined for syntax <factor-id>") # TODO
+		
 # push current object to stack
 def push_stack():
 	global current_obj
@@ -911,9 +953,8 @@ def is_literal(token):
 	
 def is_typeapp(token): # TODO, can also be <typeid> < <types> >
 	return is_id(token) or is_tvar(token)
+
 			
-
-
 TOKEN_TO_HANDLER = { 
 "<protodecs>" : handle_protodecs,
 "<protodec>" : handle_protodec,

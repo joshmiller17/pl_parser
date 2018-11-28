@@ -38,7 +38,7 @@ current_obj = None
 current_obj_type = None
 object_stack = [None]
 object_type_stack = ["None"]
-DEBUG_LEVEL = 1
+DEBUG_LEVEL = 2
 
 
 
@@ -275,6 +275,15 @@ class Fielddec:
 	def set_id(self, i):
 		self.id = i
 
+def stacktrace():
+	if DEBUG_LEVEL > 0.5:
+		print("\nDEBUG: Error traceback:")
+		for l in traceback.extract_stack()[1:-1]:
+			print("------ " + str(l))
+		print("Expecting: " + str(expecting))
+		print("Current object type: " + str(current_obj_type))
+		print("Current object: " + str(current_obj))
+		
 def throw_error(reason, addl=""):
 	global line_count
 	global illegal
@@ -286,10 +295,7 @@ def throw_error(reason, addl=""):
 	error_msg = reason + " in line " + str(error_line)
 	if addl:
 		error_msg += "\n" + addl
-	if DEBUG_LEVEL > 0.5:
-		print("DEBUG: Error traceback:")
-		for l in traceback.extract_stack()[1:-1]:
-			print("------ " + str(l))
+	stacktrace()
 
 			
 # TODO
@@ -317,12 +323,8 @@ def run(input, output):
 			file.write(ast_to_string(ast, "", 0))
 
 	if illegal:
-		print("Encountered syntax error while parsing " + str(input) + ":")
+		print("\nEncountered syntax error while parsing " + str(input) + ":")
 		print(error_msg)
-		if DEBUG_LEVEL > 0: # addl debug info
-			print("Expecting: " + str(expecting))
-			print("Current object type: " + str(current_obj_type))
-			print("Current object: " + str(current_obj))
 			
 
 def tokenize_line(line, repeat=False):
@@ -384,7 +386,8 @@ def add_to_ast(token):
 			print("DEBUG: Token <" + token + "> sent to " + str(handler))	
 		handler(token)
 	except KeyError as e:
-		print("Parser error: No handler for token " + token + " while expecting " + expecting[0])
+		print("\nParser error: No handler for token " + token + " while expecting " + expecting[0])
+		stacktrace()
 		exit(1)
 
 # handle tokens that have less whitespace than we hope for, such as (int) or :void
@@ -495,8 +498,9 @@ def handle_formals(token):
 		throw_error("Encountered " + token + " while expecting a <type> for a <formal>")
 			
 def handle_formal(token):
-	global current_obj
 	global expecting
+	global current_obj
+	global current_obj_type
 	assert_obj_type("Formal")
 	
 	if not is_id(token):
@@ -521,6 +525,7 @@ def handle_formal(token):
 def handle_protodec(token):
 	global expecting
 	global current_obj
+	global current_obj_type
 	if assert_obj_type("Protocol"):
 		# expect id first
 		if current_obj.typeid == None:
@@ -583,6 +588,7 @@ def handle_classdecs(token):
 def handle_classdec(token):
 	global expecting
 	global current_obj
+	global current_obj_type
 	if assert_obj_type("Class"):
 		# expect id first
 		if current_obj.id == None:
@@ -631,6 +637,7 @@ def handle_classdec(token):
 def handle_implements(token):
 	global expecting
 	global current_obj
+	global current_obj_type
 	if expecting[0] == "<implements-rest>":
 		if ',' in token:
 			if ',' == token:
@@ -747,6 +754,7 @@ def handle_funprotos(token):
 def handle_funproto(token):
 	global expecting
 	global current_obj
+	global current_obj_type
 	if not assert_obj_type("Funproto"):
 		throw_error("Funproto expected")
 	else:
@@ -796,6 +804,7 @@ def handle_constdec(token):
 	# assume constant token was already consumed
 	global expecting
 	global current_obj
+	global current_obj_type
 	if not assert_obj_type("Constdec"):
 		throw_error("Constdec expected")
 	else:
@@ -832,6 +841,7 @@ def handle_globaldec(token):
 	# assume static token was already consumed
 	global expecting
 	global current_obj
+	global current_obj_type
 	if not assert_obj_type("Globaldec"):
 		throw_error("Globaldec expected")
 	else:
@@ -868,6 +878,7 @@ def handle_globaldec(token):
 def handle_fielddec(token):
 	global expecting
 	global current_obj
+	global current_obj_type
 	if not assert_obj_type("Fielddec"):
 		throw_error("Fielddec expected")
 	else:
@@ -894,6 +905,7 @@ def handle_fielddec(token):
 def handle_fundec(token):
 	global expecting
 	global current_obj
+	global current_obj_type
 	if not assert_obj_type("Fundec"):
 		throw_error("Fundec expected")
 	else:
@@ -966,15 +978,16 @@ def handle_exp_bracket(token):
 def handle_block(token):
 	global expecting
 	global current_obj
+	global current_obj_type
 	if not assert_obj_type("Block"):
 		throw_error("Block expected")
 	else:
 		if current_obj.dec_phase:
-			if is_type(token):
-				expecting.insert(0, "<vardec>")
-				add_to_ast(token) # return to handler
-			elif "fun" is token:
+			if "fun" is token:
 				expecting.insert(0, "<fundec>")
+				add_to_ast(token) # return to handler
+			elif is_type(token):
+				expecting.insert(0, "<vardec>")
 				add_to_ast(token) # return to handler
 			else:
 				current_obj.end_decs()

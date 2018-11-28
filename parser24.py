@@ -38,7 +38,7 @@ current_obj = None
 current_obj_type = None
 object_stack = [None]
 object_type_stack = ["None"]
-DEBUG = True
+DEBUG_LEVEL = 1
 
 
 
@@ -286,7 +286,7 @@ def throw_error(reason, addl=""):
 	error_msg = reason + " in line " + str(error_line)
 	if addl:
 		error_msg += "\n" + addl
-	if DEBUG:
+	if DEBUG_LEVEL > 0.5:
 		print("DEBUG: Error traceback:")
 		for l in traceback.extract_stack()[1:-1]:
 			print("------ " + str(l))
@@ -319,15 +319,15 @@ def run(input, output):
 	if illegal:
 		print("Encountered syntax error while parsing " + str(input) + ":")
 		print(error_msg)
-		if DEBUG: # addl debug info
+		if DEBUG_LEVEL > 0: # addl debug info
 			print("Expecting: " + str(expecting))
 			print("Current object type: " + str(current_obj_type))
 			print("Current object: " + str(current_obj))
 			
 
-def tokenize_line(line):
-	if DEBUG and not illegal:
-		print("DEBUG: INPUT: " + line)
+def tokenize_line(line, repeat=False):
+	if DEBUG_LEVEL > 0 and not illegal and not repeat:
+		print("DEBUG: INPUT (line " + str(line_count) + "): " + line[:-1])
 	current_token = ""
 	for c in line:	
 		if ord(c) in WHITESPACE:
@@ -364,7 +364,7 @@ def check_current_obj():
 			current_obj_type = object_type_stack[0]
 			object_stack = object_stack[1:]
 			object_stack_type = object_stack_type[1:]
-			if DEBUG:
+			if DEBUG_LEVEL > 0:
 				print("Object stack popped. Current obj = " + current_obj_type)
 				print("Remaining obj stack = " + str(object_stack_type))
 	
@@ -373,14 +373,14 @@ def add_to_ast(token):
 	global expecting
 	if illegal:
 		return
-	if DEBUG:
+	if DEBUG_LEVEL > 1:
 		print("DEBUG: Tokenizing <" + token + "> while expecting " + expecting[0])
 	
 	check_current_obj()
 	
 	try:
 		handler = TOKEN_TO_HANDLER[expecting[0]]	
-		if DEBUG:
+		if DEBUG_LEVEL > 1:
 			print("DEBUG: Token <" + token + "> sent to " + str(handler))	
 		handler(token)
 	except KeyError as e:
@@ -394,9 +394,9 @@ def read_tight_code(token):
 	new_line = token
 	for t in tight_tokens:
 		new_line = new_line.replace(t, " " + t + " ")
-	if DEBUG:
+	if DEBUG_LEVEL > 1:
 		print("DEBUG: " + token + " loosened to " + new_line)
-	tokenize_line(new_line)
+	tokenize_line(new_line, repeat=True)
 		
 		
 	
@@ -685,6 +685,7 @@ def handle_classbody(token):
 			# assume block handler adds the block to our obj and consumes }
 			else:
 				expecting.insert(0, "<bodydecs>")
+				add_to_ast(token) # don't consume token
 				# then bodydecs TODO   <constdec> or <globaldec> or <fielddec> or <fundec>
 				# finally if }, return, consume expecting, don't consume token (classdec will)
 
@@ -710,6 +711,12 @@ def handle_bodydecs(token):
 			push_stack()
 		current_obj = Globaldec()
 		current_obj_type = "Globaldec"
+	elif "fun" == token:
+		expecting.insert(0, "<fundec>")
+		if current_obj:
+			push_stack()
+		current_obj = Fundec()
+		current_obj_type = "Fundec"
 	elif is_type(token):
 		expecting.insert(0, "<fielddec>")
 		if current_obj:
@@ -717,12 +724,6 @@ def handle_bodydecs(token):
 		current_obj = Fielddec()
 		current_obj_type = "Fielddec"
 		add_to_ast(token) # don't consume token
-	elif "fun" == token:
-		expecting.insert(0, "<fundec>")
-		if current_obj:
-			push_stack()
-		current_obj = Fundec()
-		current_obj_type = "Fundec"
 	elif '}' in token:
 		if '}' is token:
 			expecting = expecting[1:]

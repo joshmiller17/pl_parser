@@ -23,6 +23,11 @@ MULOPS = ["*", "/"]
 UNOPS = ["!", "-"]
 PRINTABLES = [" ", "!", "#", "$", "%", "&", "(", ")", "*", \
        "+", ",", "-", ".", "/", ":", ";", "<", "=", ">", "?", "@", "[", "]", "^", "{", "}", "~"]
+STM_REDIRECTS = {";" : "<stm-empty>", "if" : "<stm-if>", \
+			"while" : "<stm-while>", "for" : "<stm-for>", \
+			"return" : "<stm-ret>", "{" : "<stm-block>", \
+			"halt" : "<stm-halt>"}
+STM_REDIRECTS =    
 illegal = False
 error_line = 0
 error_msg = ""
@@ -799,9 +804,30 @@ def handle_fielddec(token):
 				read_tight_code()
 		
 
-def handle_exp(token):
+def handle_exp(token, end-token):
 	throw_error("Parser not defined for syntax <exp>") # TODO
+	if token == end-token:
+		pass # TODO return constructed exp to prev object
+	
+def handle_exp_semi(token):
+	handle_exp(token, ';')
+	
+def handle_exp_paren(token):
+	handle_exp(token, ')')
+	
+def handle_exp_bracket(token):
+	handle_exp(token, ']')
 
+# redirect to more specific stm handlers based on first token of stm
+def handle_stm(token):
+	global expecting
+	for key in STM_REDIRECTS.keys():
+		if key in token:
+			if key is token:
+				expecting[0] = STM_REDIRECTS[key]
+				add_to_ast(token) # return to handler
+			else:
+				read_tight_code()
 		
 def handle_factor(token):
 	# check for factor-unop
@@ -954,7 +980,7 @@ def is_literal(token):
 def is_typeapp(token): # TODO, can also be <typeid> < <types> >
 	return is_id(token) or is_tvar(token)
 
-			
+
 TOKEN_TO_HANDLER = { 
 "<protodecs>" : handle_protodecs,
 "<protodec>" : handle_protodec,
@@ -972,6 +998,16 @@ TOKEN_TO_HANDLER = {
 "<constdec>" : handle_constdec,
 "<globaldec>" : handle_globaldec,
 "<fielddec>" : handle_fielddec,
+"<exp-semi>" : handle_exp_semi,
+"<exp-paren>" : handle_exp_paren,
+"<exp-bracket>" : handle_exp_bracket,
+"<stm-empty>" : handle_stm_empty,
+"<stm-if>" : handle_stm_if,
+"<stm-while>" : handle_stm_while,
+"<stm-for>" : handle_stm_for,
+"<stm-ret>" : handle_stm_return,
+"<stm-block>" : handle_stm_block,
+"<stm-halt>" : handle_stm_halt,
 }			
 			
 def main():

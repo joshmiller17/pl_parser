@@ -40,26 +40,30 @@ DEBUG = True
 
 # TODO
 #  handlers for:
-#    funproto
-#    classdec
-#    classbody
-#    constdec
-#    globaldec
-#    fielddec
-#    formal
-#    fundec
-#    block
-#    localdec
-#    vardec
-#    stm
-#    exp
-#    lhs
-#    disjunct
-#    conjunct
-#    simple
-#    term
+
+# TODO
+
 #    factor
 #    factor-rest
+
+#    simple
+#    term
+
+
+
+#    disjunct
+#    conjunct
+#    lhs
+
+#    exp
+#    vardec
+#    stm
+#    block
+#    fundec
+#    localdec
+
+
+
 #    extends
 #    implements
 #    floatliteral
@@ -152,6 +156,7 @@ class Class:
 		self.init_formals = []
 		self.block = None
 		self.expecting_more_vars = False
+		self.expecting_formals = True
 		self.bodydecs = []
 		
 	def set_id(self, i):
@@ -166,6 +171,9 @@ class Class:
 		
 	def set_expecting(self, b):
 		self.expecting_more_vars = b
+		
+	def found_formals(self):
+		self.expecting_formals = False
 		
 	def add_formal(self, f):
 		self.init_formals.append(f)
@@ -188,7 +196,50 @@ class Block:
 	def add_stm(self, s):
 		self.stms.append(s)
 		
+class Dec:
+
+	def __init__(self):
+		self.type = None
+		self.id = None
+		self.lit = None
+		self.eq = False
+		self.dectype = None
+		
+	def set_type(self, t):
+		self.type = t
+		
+	def set_id(self, i):
+		self.id = i
+		
+	def consume_eq():
+		self.eq = True
+		
+	def set_lit(self, l):
+		self.lit = l
+		
+class Constdec(Dec):
+
+	def __init__(self):
+		Dec.__init__(self)
+		self.dectype = "const"
+		
+class Globaldec(Dec):
+
+	def __init__(self):
+		Dec.__init__(self)
+		self.dectype = "global"
 	
+class Fielddec:
+
+	def __init__(self):
+		self.type = None
+		self.id = None
+		
+	def set_type(self, t):
+		self.type = t
+		
+	def set_id(self, i):
+		self.id = i
 
 def throw_error(reason, addl=""):
 	global line_count
@@ -240,77 +291,6 @@ def run(input, output):
 			print("Current object: " + str(current_obj))
 			
 
-def is_valid_char(c, mustbe=[], cantbe=[]):
-	restrictions = copy.copy(cantbe)
-	if mustbe != []:
-		options = ["digit", "lower", "upper", "_", "print"]
-		for opt in options:
-			if opt not in mustbe:
-				restrictions.append(opt)
-	if c.isdigit() and "digit" not in restrictions:
-		return True
-	if c.isalpha():
-		if c.islower() and "lower" not in restrictions:
-			return True
-		elif c.isupper() and "upper" not in restrictions:
-			return True
-	if c == "_" and "_" not in restrictions:
-		return True
-	if c in PRINTABLES and "print" not in restrictions:
-		return True
-	return False
-	
-def is_id(token):
-	valid = is_valid_char(token[0], mustbe=["lower"])
-	if len(token) > 1:
-		for c in token[1:]:
-			valid = valid and is_valid_char(c, cantbe=["print"]) # subsequent
-	return valid
-	
-def is_tvar(token):
-	valid = is_valid_char(token[0], mustbe=["upper"])
-	if len(token) > 1:
-		for c in token[1:]:
-			valid = valid and is_valid_char(c, cantbe=["print"]) # subsequent
-	return valid
-	
-def is_intliteral(token):
-	valid = is_valid_char(token[0], mustbe["digit"])
-	if len(token) > 1:
-		for c in token[1:]:
-			valid = valid and is_valid_char(c, mustbe=["digit"])
-	return valid
-	
-def is_stringliteral(token):
-	str = token[1:-1]
-	if not token.startswith("\"") or not token.endswith("\""):
-		return False
-	valid = True
-	for c in str:
-		valid = valid and is_valid_char(c)
-	return valid
-		
-def is_charliteral(token):
-	return len(token) == 3 and token[0] == "\'" and token[2] == "\'" \
-		and is_valid_char(token[1])
-		
-def is_floatliteral(token):
-	return False # TODO
-		
-def is_literal(token):
-	if token == "null":
-		return True
-	elif token == "true":
-		return True
-	elif token == "false":
-		return True
-	else:
-		return is_charliteral(token) or is_stringliteral(token) \
-				or is_intliteral(token) or is_floatliteral(token)
-	
-def is_typeapp(token): # TODO, can also be <typeid> < <types> >
-	return is_id(token) or is_tvar(token)
-			
 def tokenize_line(line):
 	if DEBUG and not illegal:
 		print("DEBUG: INPUT: " + line)
@@ -384,6 +364,40 @@ def read_tight_code(token):
 		print("DEBUG: " + token + " loosened to " + new_line)
 	tokenize_line(new_line)
 		
+		
+	
+def assert_obj_type(t):
+	#global current_obj_type
+	if t == current_obj_type:
+		return True
+	else:
+		throw_error("Encountered a " + t + " while expecting a " + str(current_obj_type))
+		return False
+		
+	
+# A recursive handler for taking the AST array and formatting it into a string for .ast output
+def ast_to_string(ast, out, indent_level):
+	if indent_level == 0:
+		out += "(program\n"
+	indent = indent_level + 1
+	
+	# TODO redo this section now that I'm using classes
+	"""
+	for e in ast:
+		if hasattr(next, "__len__"): # check if we need to recurse
+			out += ast_to_string(e, out, indent)
+		else:
+			# TODO 
+			print("Not sure what to do here, e is not array: " + str(e))
+	
+		# TODO more here
+	"""
+	
+	out += ")"
+	return out
+			
+
+		
 def handle_protodecs(token):
 	global expecting
 	global current_obj
@@ -399,6 +413,123 @@ def handle_protodecs(token):
 		# no more protodecs, find a new handler
 		expecting = expecting[1:]
 		add_to_ast(token)
+
+def handle_rtype(token):
+	global expecting
+	if ':' in token or ')' in token or ';' in token:
+		read_tight_code(token)
+	elif not is_rtype(token):
+		throw_error("Encountered " + token + " while expecting <rtype>")
+	else:
+		current_obj.set_rtype(token)
+		expecting = expecting[1:] # rtype finished
+	
+def handle_formals(token):
+	global expecting
+	global current_obj
+	global current_obj_type
+	
+	if ')' in token:
+		if ')' is token:
+			if expecting[0] == "<formals-rest>":
+				throw_error("Expecting another <formal>")
+			expecting = expecting[1:] # rest of formals is empty
+		else:
+			read_tight_code(token)
+	
+	elif ',' in token:
+		if ',' is token:
+			expecting.insert(0, "<formals-rest>") # expect another formal
+		else:
+			read_tight_code(token)		
+	elif is_type(token):
+		if current_obj_type == "Formal":
+			throw_error("Encountered type " + token \
+				+ " while parsing a <formal> that already had a type " + str(current_obj.type))
+		else:
+			if expecting[0] == "<formals-rest>":
+				expecting[0] = "<formal>"
+			else:
+				expecting.insert(0, "<formal>")
+			if current_obj:
+				push_stack()
+			current_obj = Formal()
+			current_obj_type = "Formal"
+			ast.append(current_obj) # TODO fix?
+			current_obj.set_type(token)
+	else:
+		throw_error("Encountered " + token + " while expecting a <type> for a <formal>")
+			
+def handle_formal(token):
+	global current_obj
+	global expecting
+	assert_obj_type("Formal")
+	
+	if not is_id(token):
+		if ')' in token:
+			read_tight_code(token)
+		elif ',' in token:
+			if ',' is token:
+				throw_error("Encountered " + token + " while expecting an <id>")
+			else:
+				read_tight_code(token)
+		else:
+			throw_error("Encountered " + token + " while expecting an <id>")
+	else:
+		current_obj.set_id(token)
+		# add formal to its parent object
+		formal_obj = current_obj
+		pop_stack()
+		current_obj.add_formal(formal_obj)
+		expecting = expecting[1:] # formal finished
+
+		
+def handle_protodec(token):
+	global expecting
+	global current_obj
+	if assert_obj_type("Protocol"):
+		# expect id first
+		if current_obj.typeid == None:
+			if is_id(token):
+				current_obj.set_typeid(token)
+			else:
+				throw_error("Encountered " + token + " while expecting a typeid for a <protodec>")
+		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
+		elif ',' == token: # expect another tvar
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Too many commas in typevars?")
+			current_obj.set_expecting(True)
+		elif ',' in token: # comma is part of another token
+			for raw_token in token.split(','):
+				t = raw_token.strip() # double check no whitespace
+				add_to_ast(t)
+				add_to_ast(',') # splitting on commas, put commas back
+		elif is_tvar(token): # no comma
+			current_obj.add_typevar(token)
+			current_obj.set_expecting(False)
+		elif token == "extends":
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				expecting.insert(0, "<extends>")
+		elif '{' in token:
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				if '{' == token:
+					expecting.insert(0, "<funprotos>")
+				else:
+					throw_error("Syntax error while parsing a <protodec>")
+		elif '}' in token:
+			if '}' is token:
+				expecting = expecting[1:]
+			else:
+				read_tight_code(token)
+		else:
+			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
+	else:
+		throw_error("Protocol expected")
+
 		
 def handle_classdecs(token):
 	global expecting
@@ -492,21 +623,28 @@ def handle_implements(token):
 			
 def handle_classbody(token):
 	global expecting
+	global current_obj
 	# already took care of {
 	# now expecting ( <formals> ) <block> <bodydecs> }
 	if '(' in token:
 		if '(' is token:
+			current_obj.found_formals()
 			expecting.insert(0, "<formals>")
 		else:
-			read_tight_code()
-	# next should be block
+			read_tight_code(token)
+	else:
+		if current_obj.expecting_formals:
+			throw_error("Expecting (<formals>) for <init> of <classbody>")
+		else:
+			throw_error("Parser not defined for syntax <classbody>")
+			# ) handled by formals
+			# next should be block TODO { <localdecs> <stms> }
+			# then bodydecs TODO   <constdec> or <globaldec> or <fielddec> or <fundec>
+			# finally if }, return, consume expecting, don't consume token
 	
 	# TODO add all this back to current obj
-	# -- add_formal
 	# -- add_block
 	# -- add_bodydec
-	
-
 	
 def handle_funprotos(token):
 	global expecting
@@ -525,6 +663,7 @@ def handle_funprotos(token):
 	
 def handle_funproto(token):
 	global expecting
+	global current_obj
 	if not assert_obj_type("Funproto"):
 		throw_error("Funproto expected")
 	else:
@@ -569,6 +708,105 @@ def handle_funproto(token):
 		else:
 			throw_error("Syntax error in <funproto>", addl="Did you forget a semicolon or parenthesis?")
 		
+		
+def handle_constdec(token):
+	# assume constant token was already consumed
+	global expecting
+	global current_obj
+	if not assert_obj_type("Constdec"):
+		throw_error("Constdec expected")
+	else:
+		if current_obj.type is None:
+			if not token in PRIMTYPES:
+				throw_error("Encounted " + token + " while expecting a <primtype> for <constdec>")
+			else:
+				current_obj.set_type(token)
+		elif current_obj.id is None:
+			if not is_id(token):
+				throw_error(token + " is not a valid <id> for <constdec>")
+			else:
+				current_obj.set_id(token)
+		elif not current_obj.eq:
+			if token == ASSIGNOP:
+				current_obj.consume_eq()
+			else:
+				throw_error("Expecting <assignop> while parsing <constdec>")
+		elif current_obj.lit is None:
+			if not is_literal(token):
+				throw_error(token + " is not a valid <literal> for <constdec>")
+			else:
+				current_obj.lit = token
+		elif ';' in token:
+			if ';' is token:
+				expecting = expecting[1:] # consume char, done
+				dec_obj = current_obj
+				pop_stack()
+				current_obj.add_formal(dec_obj)
+			else:
+				read_tight_code()
+				
+def handle_globaldec(token):
+	# assume static token was already consumed
+	global expecting
+	global current_obj
+	if not assert_obj_type("Globaldec"):
+		throw_error("Globaldec expected")
+	else:
+		if current_obj.type is None:
+			if not token in PRIMTYPES:
+				throw_error("Encounted " + token + " while expecting a <primtype> for <globaldec>")
+			else:
+				current_obj.set_type(token)
+		elif current_obj.id is None:
+			if not is_id(token):
+				throw_error(token + " is not a valid <id> for <globaldec>")
+			else:
+				current_obj.set_id(token)
+		elif not current_obj.eq:
+			if token == ASSIGNOP:
+				current_obj.consume_eq()
+			else:
+				throw_error("Expecting <assignop> while parsing <globaldec>")
+		elif current_obj.lit is None:
+			if not is_literal(token):
+				throw_error(token + " is not a valid <literal> for <globaldec>")
+			else:
+				current_obj.lit = token
+		elif ';' in token:
+			if ';' is token:
+				expecting = expecting[1:] # consume char, done
+				dec_obj = current_obj
+				pop_stack()
+				current_obj.add_formal(dec_obj)
+			else:
+				read_tight_code()
+		
+
+def handle_fielddec(token):
+	global expecting
+	global current_obj
+	if not assert_obj_type("Fielddec"):
+		throw_error("Fielddec expected")
+	else:
+		if current_obj.type is None:
+			if not is_type(token):
+				throw_error("Encounted " + token + " while expecting a <type> for <fielddec>")
+			else:
+				current_obj.set_type(token)
+		elif current_obj.id is None:
+			if not is_id(token):
+				throw_error(token + " is not a valid <id> for <fielddec>")
+			else:
+				current_obj.set_id(token)
+		elif ';' in token:
+			if ';' is token:
+				expecting = expecting[1:] # consume char, done
+				dec_obj = current_obj
+				pop_stack()
+				current_obj.add_formal(dec_obj)
+			else:
+				read_tight_code()
+		
 # push current object to stack
 def push_stack():
 	global current_obj
@@ -602,155 +840,78 @@ def is_type(token): # TODO more needed here
 def is_rtype(token):
 	return token is "void" or is_type(token)
 		
-def handle_rtype(token):
-	global expecting
-	if ':' in token or ')' in token or ';' in token:
-		read_tight_code(token)
-	elif not is_rtype(token):
-		throw_error("Encountered " + token + " while expecting <rtype>")
-	else:
-		current_obj.set_rtype(token)
-		expecting = expecting[1:] # rtype finished
-	
-def handle_formals(token):
-	global expecting
-	global current_obj
-	global current_obj_type
-	
-	if ')' in token:
-		if ')' is token:
-			if expecting[0] == "<formals-rest>":
-				throw_error("Expecting another <formal>")
-			expecting = expecting[1:] # rest of formals is empty
-		else:
-			read_tight_code(token)
-	
-	elif ',' in token:
-		if ',' is token:
-			expecting.insert(0, "<formals-rest>") # expect another formal
-		else:
-			read_tight_code(token)		
-	elif is_type(token):
-		if current_obj_type == "Formal":
-			throw_error("Encountered type " + token \
-				+ " while parsing a <formal> that already had a type " + str(current_obj.type))
-		else:
-			if expecting[0] == "<formals-rest>":
-				expecting[0] = "<formal>"
-			else:
-				expecting.insert(0, "<formal>")
-			if current_obj:
-				push_stack()
-			current_obj = Formal()
-			current_obj_type = "Formal"
-			ast.append(current_obj) # TODO fix?
-			current_obj.set_type(token)
-	else:
-		throw_error("Encountered " + token + " while expecting a <type> for a <formal>")
-			
 
+def is_valid_char(c, mustbe=[], cantbe=[]):
+	restrictions = copy.copy(cantbe)
+	if mustbe != []:
+		options = ["digit", "lower", "upper", "_", "print"]
+		for opt in options:
+			if opt not in mustbe:
+				restrictions.append(opt)
+	if c.isdigit() and "digit" not in restrictions:
+		return True
+	if c.isalpha():
+		if c.islower() and "lower" not in restrictions:
+			return True
+		elif c.isupper() and "upper" not in restrictions:
+			return True
+	if c == "_" and "_" not in restrictions:
+		return True
+	if c in PRINTABLES and "print" not in restrictions:
+		return True
+	return False
 	
-def handle_formal(token):
-	global current_obj
-	global expecting
-	assert_obj_type("Formal")
+def is_id(token):
+	valid = is_valid_char(token[0], mustbe=["lower"])
+	if len(token) > 1:
+		for c in token[1:]:
+			valid = valid and is_valid_char(c, cantbe=["print"]) # subsequent
+	return valid
 	
-	if not is_id(token):
-		if ')' in token:
-			read_tight_code(token)
-		elif ',' in token:
-			if ',' is token:
-				throw_error("Encountered " + token + " while expecting an <id>")
-			else:
-				read_tight_code(token)
-		else:
-			throw_error("Encountered " + token + " while expecting an <id>")
-	else:
-		current_obj.set_id(token)
-		# add formal to its parent object
-		formal_obj = current_obj
-		pop_stack()
-		current_obj.add_formal(formal_obj)
-		expecting = expecting[1:] # formal finished
-
+def is_tvar(token):
+	valid = is_valid_char(token[0], mustbe=["upper"])
+	if len(token) > 1:
+		for c in token[1:]:
+			valid = valid and is_valid_char(c, cantbe=["print"]) # subsequent
+	return valid
+	
+def is_intliteral(token):
+	valid = is_valid_char(token[0], mustbe["digit"])
+	if len(token) > 1:
+		for c in token[1:]:
+			valid = valid and is_valid_char(c, mustbe=["digit"])
+	return valid
+	
+def is_stringliteral(token):
+	str = token[1:-1]
+	if not token.startswith("\"") or not token.endswith("\""):
+		return False
+	valid = True
+	for c in str:
+		valid = valid and is_valid_char(c)
+	return valid
 		
-def handle_protodec(token):
-	global expecting
-	global current_obj
-	if assert_obj_type("Protocol"):
-		# expect id first
-		if current_obj.typeid == None:
-			if is_id(token):
-				current_obj.set_typeid(token)
-			else:
-				throw_error("Encountered " + token + " while expecting a typeid for a <protodec>")
-		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
-		elif ',' == token: # expect another tvar
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Too many commas in typevars?")
-			current_obj.set_expecting(True)
-		elif ',' in token: # comma is part of another token
-			for raw_token in token.split(','):
-				t = raw_token.strip() # double check no whitespace
-				add_to_ast(t)
-				add_to_ast(',') # splitting on commas, put commas back
-		elif is_tvar(token): # no comma
-			current_obj.add_typevar(token)
-			current_obj.set_expecting(False)
-		elif token == "extends":
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Expecting another typevar")
-			else:
-				expecting.insert(0, "<extends>")
-		elif '{' in token:
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Expecting another typevar")
-			else:
-				if '{' == token:
-					expecting.insert(0, "<funprotos>")
-				else:
-					throw_error("Syntax error while parsing a <protodec>")
-		elif '}' in token:
-			if '}' is token:
-				expecting = expecting[1:]
-			else:
-				read_tight_code(token)
-		else:
-			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
-	else:
-		throw_error("Protocol expected")
-	
-def assert_obj_type(t):
-	#global current_obj_type
-	if t == current_obj_type:
+def is_charliteral(token):
+	return len(token) == 3 and token[0] == "\'" and token[2] == "\'" \
+		and is_valid_char(token[1])
+		
+def is_floatliteral(token):
+	return False # TODO
+		
+def is_literal(token):
+	if token == "null":
+		return True
+	elif token == "true":
+		return True
+	elif token == "false":
 		return True
 	else:
-		throw_error("Encountered a " + t + " while expecting a " + str(current_obj_type))
-		return False
-		
+		return is_charliteral(token) or is_stringliteral(token) \
+				or is_intliteral(token) or is_floatliteral(token)
 	
-# A recursive handler for taking the AST array and formatting it into a string for .ast output
-def ast_to_string(ast, out, indent_level):
-	if indent_level == 0:
-		out += "(program\n"
-	indent = indent_level + 1
-	
-	# TODO redo this section now that I'm using classes
-	"""
-	for e in ast:
-		if hasattr(next, "__len__"): # check if we need to recurse
-			out += ast_to_string(e, out, indent)
-		else:
-			# TODO 
-			print("Not sure what to do here, e is not array: " + str(e))
-	
-		# TODO more here
-	"""
-	
-	out += ")"
-	return out
+def is_typeapp(token): # TODO, can also be <typeid> < <types> >
+	return is_id(token) or is_tvar(token)
 			
-
 
 
 TOKEN_TO_HANDLER = { 
@@ -767,6 +928,9 @@ TOKEN_TO_HANDLER = {
 "<implements>" : handle_implements,
 "<implements-rest>" : handle_implements,
 "<classbody>" : handle_classbody,
+"<constdec>" : handle_constdec,
+"<globaldec>" : handle_globaldec,
+"<fielddec>" : handle_fielddec,
 }			
 			
 def main():

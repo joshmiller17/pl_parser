@@ -27,6 +27,7 @@ STM_REDIRECTS = {";" : "<stm-empty>", "if" : "<stm-if>", \
 			"while" : "<stm-while>", "for" : "<stm-for>", \
 			"return" : "<stm-ret>", "{" : "<block>", \
 			"halt" : "<stm-halt>"}
+RESERVED = ["if", "while", "for", "return", "halt", "bool", "char", "string", "int", "float"]
 illegal = False
 error_line = 0
 error_msg = ""
@@ -54,13 +55,6 @@ DEBUG_LEVEL = 2
 #    exp is lhs (assignop exp)*
 
 
-#    vardec
-#    stm
-#    block
-#    fundec
-#    localdec
-#    extends
-#    implements
 #    floatliteral
 #    exponent
 
@@ -398,7 +392,7 @@ def read_tight_code(token):
 	for t in tight_tokens:
 		new_line = new_line.replace(t, " " + t + " ")
 	if DEBUG_LEVEL > 1:
-		print("DEBUG: " + token + " loosened to " + new_line)
+		print("DEBUG: \'" + token + "\' loosened to \'" + new_line + "\'")
 	tokenize_line(new_line, repeat=True)
 		
 		
@@ -550,7 +544,7 @@ def handle_protodec(token):
 			if current_obj.expecting_more_vars:
 				throw_error("Syntax error", addl="Expecting another typevar")
 			else:
-				expecting.insert(0, "<extends>")
+				expecting.insert(0, "<extends-rest>")
 		elif '{' in token:
 			if current_obj.expecting_more_vars:
 				throw_error("Syntax error", addl="Expecting another typevar")
@@ -634,6 +628,33 @@ def handle_classdec(token):
 	else:
 		throw_error("Syntax error while parsing a <classdec>")
 	
+def handle_extends(token):
+	global expecting
+	global current_obj
+	global current_obj_type
+	if expecting[0] == "<extends-rest>":
+		if ',' in token:
+			if ',' == token:
+				throw_error("Syntax error while parsing <typeapps> of a <protodec>")
+			else:
+				read_tight_code(token)
+		else:
+			if is_typeapp(token):
+				current_obj.add_extends(token)
+				expecting[0] = "<extends>"
+			else:
+				throw_error("Encountered " + token + " while expecting a <typeapp> for Protocol " + current_obj.typeid)
+	elif expecting[0] == "<extends>":
+		# expecting ',' or end of implements here
+		if ',' in token:
+			if ',' == token:
+				expecting[0] = "<extends-rest>"
+			else:
+				read_tight_code(token)
+		else:
+			expecting = expecting[1:]
+			add_to_ast(token) # return to handler
+	
 def handle_implements(token):
 	global expecting
 	global current_obj
@@ -643,7 +664,7 @@ def handle_implements(token):
 			if ',' == token:
 				throw_error("Syntax error while parsing <typeapps> of a <classdec>")
 			else:
-				read_tight_code()
+				read_tight_code(token)
 		else:
 			if is_typeapp(token):
 				current_obj.add_implements(token)
@@ -656,7 +677,7 @@ def handle_implements(token):
 			if ',' == token:
 				expecting[0] = "<implements-rest>"
 			else:
-				read_tight_code()
+				read_tight_code(token)
 		else:
 			expecting = expecting[1:]
 			add_to_ast(token) # return to handler
@@ -688,7 +709,7 @@ def handle_classbody(token):
 					current_obj = Block()
 					current_obj_type = "Block"
 				else:
-					read_tight_code()
+					read_tight_code(token)
 			# assume block handler adds the block to our obj and consumes }
 			else:
 				expecting.insert(0, "<bodydecs>")
@@ -835,7 +856,7 @@ def handle_constdec(token):
 				pop_stack()
 				current_obj.add_formal(dec_obj) # FIXME, should be add_dec
 			else:
-				read_tight_code()
+				read_tight_code(token)
 				
 def handle_globaldec(token):
 	# assume static token was already consumed
@@ -872,7 +893,7 @@ def handle_globaldec(token):
 				pop_stack()
 				current_obj.add_formal(dec_obj) # FIXME, should be add_dec
 			else:
-				read_tight_code()
+				read_tight_code(token)
 		
 
 def handle_fielddec(token):
@@ -899,7 +920,7 @@ def handle_fielddec(token):
 				pop_stack()
 				current_obj.add_formal(dec_obj) # FIXME, should be add_dec
 			else:
-				read_tight_code()
+				read_tight_code(token)
 		
 
 def handle_fundec(token):
@@ -950,7 +971,7 @@ def handle_fundec(token):
 				current_obj = Block()
 				current_obj_type = "Block"
 			else:
-				read_tight_code()
+				read_tight_code(token)
 		elif '}' is token:
 			expecting = expecting[1:] # end of fundec
 			fd_obj = current_obj
@@ -1000,9 +1021,10 @@ def handle_block(token):
 				current_obj.add_block(block_obj)
 				expecting = expecting[1:] # block finished
 			else:
-				read_tight_code()
+				read_tight_code(token)
 		else:
 			expecting.insert(0, "<stm>")
+			add_to_ast(token)
 	
 	
 # redirect to more specific stm handlers based on first token of stm
@@ -1010,11 +1032,12 @@ def handle_stm(token):
 	global expecting
 	for key in STM_REDIRECTS.keys():
 		if key in token:
-			if key is token:
+			if key == token:
 				expecting[0] = STM_REDIRECTS[key]
-				add_to_ast(token) # return to handler
+				if key != "return": # consume return
+					add_to_ast(token) # return to handler
 			else:
-				read_tight_code()
+				read_tight_code(token)
 	
 def handle_stm_empty(token):
 		throw_error("Parser not defined for syntax <stm-empty>") # TODO
@@ -1029,7 +1052,12 @@ def handle_stm_for(token):
 	throw_error("Parser not defined for syntax <stm-for>") # TODO
 	
 def handle_stm_return(token):
-	throw_error("Parser not defined for syntax <stm-return>") # TODO
+	global expecting
+	if ';' == token:
+		expecting = expecting[1:] # consume ;
+	else:
+		expecting[0] = "<exp-semi>"
+		add_to_ast(token)
 
 def handle_stm_halt(token):
 	throw_error("Parser not defined for syntax <stm-halt>") # TODO
@@ -1043,7 +1071,7 @@ def handle_factor(token):
 				add_to_ast(token) # return to handler
 				return
 			else:
-				read_tight_code()
+				read_tight_code(token)
 	if is_literal(token):
 		expecting[0] = "<factor-lit>"
 		add_to_ast(token) # return to handler
@@ -1058,7 +1086,7 @@ def handle_factor(token):
 			expecting[0] = "<factor-exp>"
 			# consume (
 		else:
-			read_tight_code()
+			read_tight_code(token)
 	elif is_id(token):
 		expecting[0] = "<factor-id>"
 		add_to_ast(token)
@@ -1139,7 +1167,12 @@ def is_id(token):
 	if len(token) > 1:
 		for c in token[1:]:
 			valid = valid and is_valid_char(c, cantbe=["print"]) # subsequent
+	valid = valid and not is_reserved(token)
 	return valid
+	
+def is_reserved(token):
+	return token in RESERVED
+	
 	
 def is_tvar(token):
 	valid = is_valid_char(token[0], mustbe=["upper"])
@@ -1208,6 +1241,7 @@ TOKEN_TO_HANDLER = {
 "<exp-semi>" : handle_exp_semi,
 "<exp-paren>" : handle_exp_paren,
 "<exp-bracket>" : handle_exp_bracket,
+"<stm>" : handle_stm,
 "<stm-empty>" : handle_stm_empty,
 "<stm-if>" : handle_stm_if,
 "<stm-while>" : handle_stm_while,

@@ -282,7 +282,6 @@ class Exp:
 		self.grammar_stack = [] # for counting matching () and []
 		self.index = 0 # used as a pointer to where in the raw array we're processing
 		self.current_factor = None
-		self.factor_stack = [] # for unops
 		
 	def raw_append(self, r):
 		self.raw.append(r)
@@ -339,21 +338,35 @@ class Exp:
 			throw_error("Syntax error while parsing <factor>")
 	
 	def handle_factor_unop():
-		# assume we have a current factor
-		if self.raw[0] not in UNOPS:
+		if not self.current_factor:
+			throw_error("Assertion error: current <factor> is None while parsing <unop>")
+		if self.raw[self.index] not in UNOPS:
 			throw_error("Expected <unop> while parsing <factor>")
-		self.current_factor.set_unop(self.raw[0])
+		self.current_factor.set_unop(self.raw.pop(self.index))
+		temp_factor = self.current_factor
+		new_factor()
+		temp_factor.set_subfactor(self.current_factor)
+		temp_factor.set_valid(True)
+		self.raw.insert(self.index, temp_factor)
 		
 	def handle_factor_lit():
+		if not self.current_factor:
+			throw_error("Assertion error: current <factor> is None while parsing <literal>")
 		throw_error("Parser not defined for syntax <factor-lit>") # TODO
 		
 	def handle_factor_lam():
+		if not self.current_factor:
+			throw_error("Assertion error: current <factor> is None while parsing <lambda>")
 		throw_error("Parser not defined for syntax <factor-lam>") # TODO
 		
 	def handle_factor_exp():
+		if not self.current_factor:
+			throw_error("Assertion error: current <factor> is None while parsing <exp>")
 		throw_error("Parser not defined for syntax <factor-exp>") # TODO
 		
 	def handle_factor_id():
+		if not self.current_factor:
+			throw_error("Assertion error: current <factor> is None while parsing <id>")
 		throw_error("Parser not defined for syntax <factor-id>") # TODO
 		
 	def handle_factor_rest():

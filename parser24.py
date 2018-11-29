@@ -292,9 +292,6 @@ class Exp:
 				return True
 		return False
 		
-	def internal_handler(self):
-		self.grammar_stack[0]()
-		
 	def new_factor(self):
 		if self.current_factor == None:
 			self.current_factor = Factor()
@@ -302,38 +299,35 @@ class Exp:
 	def make_factors(self):
 	# check for factor-unop
 	for token in self.raw:
+		un = False # FIXME? 
 		for u in UNOPS:
 			if u in token:
 				if u is token:
-					self.grammar_stack.insert(0, handle_factor_unop)
 					self.new_factor()
-					self.internal_handler()
-					return
+					self.handle_factor_unop()
+					un = True
 				else:
 					read_tight_code(token)
+		if un:
+			continue
 		if is_literal(token):
-			self.grammar_stack.insert(0, handle_factor_lit)
 			self.new_factor()
-			self.internal_handler()
+			self.handle_factor_lit()
 		elif token == "new":
-			self.grammar_stack.insert(0, handle_factor_new)
 			self.new_factor()
-			self.internal_handler()
+			self.handle_factor_new()
 		elif token == "lambda":
-			self.grammar_stack.insert(0, handle_factor_lam)
 			self.new_factor()
-			self.internal_handler()
+			self.handle_factor_lam()
 		elif '(' in token:
 			if '(' is token:
-				self.grammar_stack.insert(0, handle_factor_exp)
 				self.new_factor()
-				self.internal_handler()
+				self.handle_factor_exp()
 			else:
 				read_tight_code(token)
 		elif is_id(token):
-			self.grammar_stack.insert(0, handle_factor_id)
 			self.new_factor()
-			self.internal_handler()
+			self.handle_factor_id()
 		else:
 			throw_error("Syntax error while parsing <factor>")
 	
@@ -352,7 +346,11 @@ class Exp:
 	def handle_factor_lit():
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing <literal>")
-		throw_error("Parser not defined for syntax <factor-lit>") # TODO
+		if not is_literal(self.raw[self.index]):
+			throw_error("Expected <literal> while parsing <factor>")
+		else:
+			self.current_factor.set_literal(self.raw.pop(self.index))
+			self.grammar_stack[0] = handle_factor_rest
 		
 	def handle_factor_lam():
 		if not self.current_factor:
@@ -370,7 +368,12 @@ class Exp:
 		throw_error("Parser not defined for syntax <factor-id>") # TODO
 		
 	def handle_factor_rest():
-	
+		if not self.current_factor:
+			throw_error("Assertion error: current <factor> is None while parsing <factor-rest>")
+		throw_error("Parser not defined for syntax <factor-rest>") # TODO
+		
+		#self.current_factor.set_valid(True)
+		#self.raw.insert(self.index, self.current_factor)
 		
 		
 	# Given raw string of <exp>, construct the abstract representations that compose it
@@ -447,6 +450,7 @@ class Exp:
 class Factor(): # TODO
 
 	def __init__(self):
+		self.type = "Factor"
 		self.unop = None
 		self.subfactor = None
 		self.valid = False

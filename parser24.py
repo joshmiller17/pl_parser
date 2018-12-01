@@ -41,7 +41,7 @@ current_obj = None
 current_obj_type = None
 object_stack = [None]
 object_type_stack = ["None"]
-DEBUG_LEVEL = 2
+DEBUG_LEVEL = 3 # amount of debug output, range [0,3] in steps of 0.5 because debugging is messy
 
 
 
@@ -125,7 +125,7 @@ class Fundec:
 	def add_typevar(self, v):
 		self.typevars.append(v)
 		
-	def set_block(self, b):
+	def add_block(self, b):
 		self.block = b
 
 	def add_formal(self, f):
@@ -190,7 +190,7 @@ class Class:
 	def add_block(self, b):
 		self.block = b
 		
-	def add_bodydec(self, b):
+	def add_dec(self, b):
 		self.bodydecs.append(b)
 		
 class Block:
@@ -247,6 +247,16 @@ class Constdec(Dec):
 	def __init__(self):
 		Dec.__init__(self)
 		self.dectype = "const"
+		
+class Vardec(Dec):
+
+	def __init__(self):
+		Dec.__init__(self)
+		self.dectype = "var"
+		self.exp = None
+		
+	def set_exp(self, e):
+		self.exp = e
 		
 class Globaldec(Dec):
 
@@ -319,6 +329,9 @@ class Exp:
 		if DEBUG_LEVEL > 1.5:
 			print("DEBUG: factor index = " + str(self.index))
 			print("DEBUG: raw = " + str(self.raw))
+			if DEBUG_LEVEL > 2.5 and not illegal:
+				print("DEBUG: ------- waiting for ready (press enter to continue)")
+				raw_input()
 		# check for factor-unop
 		token = self.raw[self.index]
 		for u in UNOPS:
@@ -499,7 +512,7 @@ class Exp:
 					
 		# TODO assert there is only one exp
 		if len(self.raw) > 1 or len(self.raw) < 1:
-			throw_error("Parser error handling <exp>", addl="expected exactly one <exp>, got " + str(len(self.raw)))
+			throw_error("Parser error handling <exp>", addl="expected exactly 1 <exp>, got " + str(len(self.raw)) + ": " + str(self.raw))
 						
 		# TODO, uncomment
 		#except Exception as e:
@@ -613,7 +626,7 @@ def run(input, output):
 		while (line):
 			line_count += 1
 			line = tokenize_line(line)
-			if DEBUG_LEVEL > 2 and not illegal:
+			if DEBUG_LEVEL > 2.5 and not illegal:
 				print("DEBUG: ------- waiting for ready (press enter to continue)")
 				raw_input()
 			line = file.readline()
@@ -681,6 +694,8 @@ def add_to_ast(token):
 		return
 	if DEBUG_LEVEL > 1:
 		print("DEBUG: Tokenizing <" + token + "> while expecting " + expecting[0])
+		if DEBUG_LEVEL > 2:
+			print("DEBUG: Expecting: " + str(expecting))
 	
 	check_current_obj()
 	
@@ -1133,7 +1148,40 @@ def handle_funproto(token):
 		else:
 			throw_error("Syntax error in <funproto>", addl="Did you forget a semicolon or parenthesis?")
 		
-		
+	
+def handle_vardec(token):
+	global expecting
+	global current_obj
+	global current_obj_type
+	if not assert_obj_type("Vardec"):
+		throw_error("Vardec expected")
+	else:
+		if current_obj.type is None:
+			if not is_type(token)
+				throw_error("Encounted " + token + " while expecting a <type> for <vardec>")
+			else:
+				current_obj.set_type(token)
+		elif current_obj.id is None:
+			if not is_id(token):
+				throw_error(token + " is not a valid <id> for <vardec>")
+			else:
+				current_obj.set_id(token)
+		elif not current_obj.eq:
+				if token == ASSIGNOPS[0]:
+					current_obj.consume_eq()
+				else:
+					throw_error("Expecting <assignop> while parsing <vardec>")
+			elif current_obj.exp is None:
+					pass # TODO
+			elif ';' in token:
+				if ';' is token:
+					expecting = expecting[1:] # consume char, done
+					dec_obj = current_obj
+					pop_stack()
+					current_obj.add_dec(dec_obj)
+				else:
+					read_tight_code(token)
+	
 def handle_constdec(token):
 	# assume constant token was already consumed
 	global expecting
@@ -1167,7 +1215,7 @@ def handle_constdec(token):
 				expecting = expecting[1:] # consume char, done
 				dec_obj = current_obj
 				pop_stack()
-				current_obj.add_formal(dec_obj) # FIXME, should be add_dec
+				current_obj.add_dec(dec_obj)
 			else:
 				read_tight_code(token)
 				
@@ -1204,7 +1252,7 @@ def handle_globaldec(token):
 				expecting = expecting[1:] # consume char, done
 				dec_obj = current_obj
 				pop_stack()
-				current_obj.add_formal(dec_obj) # FIXME, should be add_dec
+				current_obj.add_dec(dec_obj)
 			else:
 				read_tight_code(token)
 		
@@ -1231,7 +1279,7 @@ def handle_fielddec(token):
 				expecting = expecting[1:] # consume char, done
 				dec_obj = current_obj
 				pop_stack()
-				current_obj.add_formal(dec_obj) # FIXME, should be add_dec
+				current_obj.add_dec(dec_obj)
 			else:
 				read_tight_code(token)
 		
@@ -1373,7 +1421,6 @@ def handle_exp(token, end):
 				pop_stack()
 				current_obj.add_exp(exp_obj)
 				expecting = expecting[1:] # exp finished
-				
 			else:
 				throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses or brackets")
 		else:
@@ -1412,6 +1459,7 @@ def handle_block(token):
 				pop_stack()
 				current_obj.add_block(block_obj)
 				expecting = expecting[1:] # block finished
+				add_to_ast(token) # don't consume token
 			else:
 				read_tight_code(token)
 		else:
@@ -1430,14 +1478,19 @@ def handle_stm(token):
 	global current_obj
 	global current_obj_type
 	assert_obj_type("Stm")
+	handled = False
 	for key in STM_REDIRECTS.keys():
 		if key in token:
 			if key == token:
+				handled = True
 				expecting[0] = STM_REDIRECTS[key]
 				if key != "return": # consume return
 					add_to_ast(token) # return to handler
 			else:
 				read_tight_code(token)
+	if not handled:
+		expecting[0] = "<stm-exp>"
+		add_to_ast(token)
 	
 def handle_stm_empty(token):
 	global expecting
@@ -1463,6 +1516,26 @@ def handle_stm_for(token):
 	global current_obj_type
 	throw_error("Parser not defined for syntax <stm-for>") # TODO
 	
+def handle_stm_exp(token):
+	global expecting
+	global current_obj
+	global current_obj_type
+	if expecting[0] == "<stm-exp>":
+		current_obj.set_style("exp")
+		expecting[0] = "<stm-exp-rest>"
+		expecting.insert(0, "<exp-semi>")
+		add_to_ast(token)
+	elif expecting[0] == "<stm-exp-rest>":
+		expecting = expecting[1:]
+		# add stm to its parent object
+		stm_obj = current_obj
+		pop_stack()
+		current_obj.add_stm(stm_obj)
+		add_to_ast(token)
+	
+	else:
+		throw_error("Syntax error while parsing <stm> :: <exp> ;")
+	
 def handle_stm_return(token):
 	global expecting
 	global current_obj
@@ -1470,13 +1543,14 @@ def handle_stm_return(token):
 	if ';' == token:
 		current_obj.set_style("empty")
 		expecting = expecting[1:] # consume ;
-		# add stm to its parent object
-		stm_obj = current_obj
-		pop_stack()
-		current_obj.add_stm(stm_obj)
 	else:
 		expecting[0] = "<exp-semi>"
 		add_to_ast(token)
+	
+	# add stm to its parent object
+	stm_obj = current_obj
+	pop_stack()
+	current_obj.add_stm(stm_obj)
 
 def handle_stm_halt(token):
 	throw_error("Parser not defined for syntax <stm-halt>") # TODO
@@ -1631,6 +1705,7 @@ TOKEN_TO_HANDLER = {
 "<globaldec>" : handle_globaldec,
 "<fielddec>" : handle_fielddec,
 "<fundec>" : handle_fundec,
+"<vardec>" : handle_vardec,
 "<exp-semi>" : handle_exp_semi,
 "<exp-paren>" : handle_exp_paren,
 "<exp-bracket>" : handle_exp_bracket,
@@ -1641,6 +1716,8 @@ TOKEN_TO_HANDLER = {
 "<stm-for>" : handle_stm_for,
 "<stm-ret>" : handle_stm_return,
 "<stm-halt>" : handle_stm_halt,
+"<stm-exp>" : handle_stm_exp,
+"<stm-exp-rest>" : handle_stm_exp,
 "<block>" : handle_block,
 }			
 			

@@ -41,7 +41,7 @@ current_obj = None
 current_obj_type = None
 object_stack = [None]
 object_type_stack = ["None"]
-DEBUG_LEVEL = 3 # amount of debug output, range [0,3] in steps of 0.5 because debugging is messy
+DEBUG_LEVEL = 2.5	 # amount of debug output, range [0,3] in steps of 0.5 because debugging is messy
 
 
 
@@ -236,7 +236,7 @@ class Dec:
 	def set_id(self, i):
 		self.id = i
 		
-	def consume_eq():
+	def consume_eq(self):
 		self.eq = True
 		
 	def set_lit(self, l):
@@ -255,7 +255,7 @@ class Vardec(Dec):
 		self.dectype = "var"
 		self.exp = None
 		
-	def set_exp(self, e):
+	def add_exp(self, e):
 		self.exp = e
 		
 class Globaldec(Dec):
@@ -322,16 +322,20 @@ class Exp:
 						print("DEBUG: raw = " + str(self.raw))
 					self.index += 1
 			except Exception as e:
-				pass
+				if illegal:
+					return
 	
 	# handler for how to compose factor based on first token
 	def make_factor(self):
 		if DEBUG_LEVEL > 1.5:
 			print("DEBUG: factor index = " + str(self.index))
 			print("DEBUG: raw = " + str(self.raw))
-			if DEBUG_LEVEL > 2.5 and not illegal:
-				print("DEBUG: ------- waiting for ready (press enter to continue)")
-				raw_input()
+			if DEBUG_LEVEL > 2.5:
+				if illegal:
+					return
+				else:
+					print("DEBUG: ------- waiting for ready (press enter to continue)")
+					raw_input()
 		# check for factor-unop
 		token = self.raw[self.index]
 		for u in UNOPS:
@@ -345,10 +349,7 @@ class Exp:
 						self.raw.insert(i, n)
 					return
 		# no unop, continue
-		if is_literal(token):
-			self.new_factor()
-			self.handle_factor_lit()
-		elif token == "new":
+		if token == "new":
 			self.new_factor()
 			self.handle_factor_new()
 		elif token == "lambda":
@@ -363,6 +364,9 @@ class Exp:
 				for n in new_tokens:
 					self.raw.insert(i, n)
 				return
+		elif is_literal(token):
+			self.new_factor()
+			self.handle_factor_lit()
 		elif is_id(token):
 			self.new_factor()
 			self.handle_factor_id()
@@ -430,12 +434,15 @@ class Exp:
 					else:
 						if s == '(':
 							handled = True
+							throw_error("TODO expect ( <actuals> ) <factor-rest>")
 							pass # TODO expect ( <actuals> ) <factor-rest>
 						elif s == '.':
 							handled = True
+							throw_error("TODO expect <id> <factor-rest>")
 							pass # TODO expect . <id> <factor-rest>
 						elif s == '[':
 							handled = True
+							throw_error("TODO expect [ <exp> ] <factor-rest>")
 							pass # TODO expect [ <exp> ] <factor-rest>
 						else:
 							throw_error("Syntax error while parsing <factor-rest>")
@@ -1157,7 +1164,7 @@ def handle_vardec(token):
 		throw_error("Vardec expected")
 	else:
 		if current_obj.type is None:
-			if not is_type(token)
+			if not is_type(token):
 				throw_error("Encounted " + token + " while expecting a <type> for <vardec>")
 			else:
 				current_obj.set_type(token)
@@ -1171,16 +1178,16 @@ def handle_vardec(token):
 					current_obj.consume_eq()
 				else:
 					throw_error("Expecting <assignop> while parsing <vardec>")
-			elif current_obj.exp is None:
-					pass # TODO
-			elif ';' in token:
-				if ';' is token:
-					expecting = expecting[1:] # consume char, done
-					dec_obj = current_obj
-					pop_stack()
-					current_obj.add_dec(dec_obj)
-				else:
-					read_tight_code(token)
+		elif current_obj.exp is None:
+				expecting.insert(0, "<exp-semi>")
+				add_to_ast(token)
+		else:
+			assert_obj_type("Vardec")
+			expecting = expecting[1:] # consume char, done
+			dec_obj = current_obj
+			pop_stack()
+			current_obj.add_dec(dec_obj)
+			add_to_ast(token) # return to handler
 	
 def handle_constdec(token):
 	# assume constant token was already consumed
@@ -1445,9 +1452,18 @@ def handle_block(token):
 		if current_obj.dec_phase:
 			if "fun" is token:
 				expecting.insert(0, "<fundec>")
+				if current_obj:
+					push_stack()
+				current_obj = Fundec()
+				current_obj_type = "Fundec"
+				ast.append(current_obj) # TODO fix?
 				add_to_ast(token) # return to handler
 			elif is_type(token):
 				expecting.insert(0, "<vardec>")
+				if current_obj:
+					push_stack()
+				current_obj = Vardec()
+				current_obj_type = "Vardec"
 				add_to_ast(token) # return to handler
 			else:
 				current_obj.end_decs()

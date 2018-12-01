@@ -10,6 +10,7 @@ import copy
 SPACE = 0x20
 LF = 0xa
 CR = 0xd
+INDENTATION = "  "
 ARROW = "->"
 PRIMTYPES = ["bool", "char", "string", "int", "float"]
 WHITESPACE = [ SPACE, LF, CR ]
@@ -33,7 +34,9 @@ error_line = 0
 error_msg = ""
 parsing_string = False
 expecting = ["<protodecs>", "<classdecs>", "<stm>", "<end>"] #initial syntax expectations
-ast = []
+protocols = []
+classes = []
+stms = []
 ast_string = ""
 line_count = 0
 typeids = []
@@ -813,7 +816,6 @@ def read_tight_code(token, internal=False):
 	else:
 		return(new_line.split())
 		
-		
 	
 def assert_obj_type(t):
 	#global current_obj_type
@@ -824,48 +826,60 @@ def assert_obj_type(t):
 		return False
 	
 	
-def recursive_ast_to_string(ast, out, indent_level):
-	# A recursive handler for taking the AST array and formatting it into a string for .ast output
-	
-	# if DEBUG_LEVEL > 1:
-		# print("DEBUG: AST = " + str(ast))
-
-	# if indent_level == 0:
-		# out += "(program\n"
-	# indent = indent_level + 1
-	
-	# # TODO redo this section now that I'm using classes
-	# """
-	# for e in ast:
-		# if hasattr(next, "__len__"): # check if we need to recurse
-			# out += ast_to_string(e, out, indent)
-		# else:
-			# # TODO 
-			# print("Not sure what to do here, e is not array: " + str(e))
-	
-		# # TODO more here
-	# """
-	
-	# out += ")"
-	
+def setup_ast_to_string(protocols, classes, stms):
+	out = ""
+	out += "(program\n"
+	indent = 1	
+	out += "\n" + INDENTATION * indent + "("
+	for p in protocols:
+		out = recursive_ast_to_string(p, out, indent)
+	out += ")"
+	out += "\n" + INDENTATION * indent + "("
+	for c in classes:
+		out = recursive_ast_to_string(c, out, indent)
+	out += ")"
+	out += "\n" + INDENTATION * indent + "("
+	for s in stms:
+		out = recursive_ast_to_string(s, out, indent)
+	out += ")"
+	out += ")"
 	return out
 	
 	
-def ast_to_string():	
-	return recursive_ast_to_string(ast, "", 0)
+def recursive_ast_to_string(ast, out, indent_level):
+	if DEBUG_LEVEL > 1:
+		print("DEBUG: AST = \n" + str(ast) + "\n\n")	
+	
+	for obj in ast:
+		out += "\n" + INDENTATION * indent + "("
+	
+		# TODO
+	
+		#if obj is ...
+		
+		#elif obj is ...
+	
+	
+	
+		out += ")"
+	return out
+	
+def ast_to_string():
+	return setup_ast_to_string(protocols, classes, stms)
 
 		
 def handle_protodecs(token):
 	global expecting
 	global current_obj
 	global current_obj_type
+	global protocols
 	if token == "protocol":
 		expecting.insert(0, "<protodec>")
 		if current_obj:
 			push_stack()
 		current_obj = Protocol()
 		current_obj_type = "Protocol"
-		ast.append(current_obj)
+		protocols.append(current_obj)
 	else:
 		# no more protodecs, find a new handler
 		expecting = expecting[1:]
@@ -999,13 +1013,14 @@ def handle_classdecs(token):
 	global expecting
 	global current_obj
 	global current_obj_type
+	global classes
 	if token == "class":
 		expecting.insert(0, "<classdec>")
 		if current_obj:
 			push_stack()
 		current_obj = Class()
 		current_obj_type = "Class"
-		ast.append(current_obj)
+		classes.append(current_obj)
 	elif '}' == token:
 		expecting = expecting[1:] # rest of classdecs is empty
 		pop_stack()
@@ -1596,11 +1611,12 @@ def handle_stm(token):
 	global expecting
 	global current_obj
 	global current_obj_type
+	global stms
 	if current_obj is None: # assume last stm of program
 		current_obj = Stm()
 		current_obj_type = "Stm"
 		current_obj.independent = True
-		ast.append(current_obj)
+		stms.append(current_obj)
 	assert_obj_type("Stm")
 	handled = False
 	for key in STM_REDIRECTS.keys():

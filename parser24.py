@@ -32,16 +32,18 @@ illegal = False
 error_line = 0
 error_msg = ""
 parsing_string = False
-expecting = ["<protodecs>", "<classdecs>", "<stm>"] #initial syntax expectations
+expecting = ["<protodecs>", "<classdecs>", "<stm>", "<end>"] #initial syntax expectations
 ast = []
+ast_string = ""
 line_count = 0
+typeids = []
 exp_grammar_stack = []
 EXP_GRAMMAR = ['(',')','[',']']
 current_obj = None
 current_obj_type = None
 object_stack = [None]
 object_type_stack = ["None"]
-DEBUG_LEVEL = 2.5	 # amount of debug output, range [0,3] in steps of 0.5 because debugging is messy
+DEBUG_LEVEL = 2.5  # amount of debug output, range [0,3] in steps of 0.5 because debugging is messy
 
 
 
@@ -200,7 +202,7 @@ class Block:
 		self.stms = []
 		self.dec_phase = True
 		
-	def add_localdec(self, l):
+	def add_dec(self, l):
 		self.local_decs.append(l)
 		
 	def end_decs(self):
@@ -213,9 +215,14 @@ class Stm:
 	def __init__(self):
 		self.style = None # {"empty", "exp", "if", "while", "return", "block", "halt"
 		self.exps = []
+		self.independent = False
+		self.block = None
 		
 	def set_style(self, s):
 		self.style = s
+		
+	def add_block(self, b):
+		self.block = b
 		
 	def add_exp(self, e):
 		self.exps.append(e)
@@ -338,6 +345,8 @@ class Exp:
 					raw_input()
 		# check for factor-unop
 		token = self.raw[self.index]
+		if DEBUG_LEVEL > 2.5:
+			print("DEBUG: parsing factor token " + str(token))
 		for u in UNOPS:
 			if u in token:
 				if u is token:
@@ -350,13 +359,16 @@ class Exp:
 					return
 		# no unop, continue
 		if token == "new":
+			self.raw.pop(self.index) # remove new
 			self.new_factor()
 			self.handle_factor_new()
 		elif token == "lambda":
+			self.raw.pop(self.index) # remove lambda
 			self.new_factor()
 			self.handle_factor_lam()
 		elif '(' in token:
 			if '(' is token:
+				self.raw.pop(self.index) # remove (
 				self.new_factor()
 				self.handle_factor_exp()
 			else:
@@ -397,8 +409,70 @@ class Exp:
 	def handle_factor_new(self):
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing new")
-		throw_error("Parser not defined for syntax <factor-new>") # TODO
+		if self.current_factor.id is None:
+			if is_id(self.raw[self.index]):
+				self.current_factor.set_id(self.raw.pop(self.index))
+				self.handle_factor_new()
+			else:
+				throw_error("Syntax error: expected <id> while parsing <factor>")
+		elif '(' in self.raw[self.index]:
+			if '(' == self.raw[self.index]:
+				# TODO this doesn't handle recursive actuals
+				self.raw.pop(self.index)
+				new_exp_end = self.raw.index(')')
+				if new_exp_end == -1:
+					throw_error("Syntax error while parsing <actuals> of <factor>")
+				else:
+					self.raw.pop(new_exp_end)
+					new_exp = self.raw[self.index : new_exp_end]
+					actuals = self.handle_actuals(new_exp)
+					if len(actuals):
+						for a in actuals:
+							self.current_factor.add_actual(a)
+					self.handle_factor_rest()
+		else:
+			throw_error("Syntax error while parsing <factor>")
+					
+	def handle_actuals(self, new_exp):
+		# exp, exp, exp, exp )
+		actuals = []
+		current_exp = None
+		for token in new_exp:
+			if ',' in token:
+				if ',' is token:
+					if current_exp is not None:
+						current_exp.compile()
+						actuals.append(current_exp)
+					else:
+						throw_error("Syntax error while parsing <actuals>")
+				else:
+					throw_error("Not enough whitespace while parsing <actuals> of <factor>")
+			else:
+				if current_exp is None:
+					current_exp = Exp()
+				current_exp.raw_append(token)
+		if current_exp is not None:
+			current_exp.compile()
+			actuals.append(current_exp)
+		return actuals
+	
+	def handle_bracket_exp(self):
+		current_exp = None
+		for token in new_exp:
+			if ']' in token:
+				if ']' is token:
+					if current_exp:
+						current_exp.compile()
+						return current_exp
+				else:
+					throw_error("Not enough whitespace while parsing end of [ <exp> ] of <factor>")
+			else:
+				if current_exp is None:
+					current_exp = Exp()
+				current_exp.raw_append(token)
+		throw_error("Reached end of [ <exp> ] without encountering closing bracket")
 		
+				
 	def handle_factor_lam(self):
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing lambda")
@@ -455,9 +529,9 @@ class Exp:
 		
 	# Given raw string of <exp>, construct the abstract representations that compose it
 	def compile(self):
-		#try: # TODO uncomment, indent everything else
+		#try:  # TODO uncomment
 		self.make_factors() # convert all pieces into factors and ops
-		
+	
 		while self.has_op(MULOPS): # TODO assert left and right are factors
 			for i in range(len(self.raw)):
 				if self.raw[i] in MULOPS:
@@ -521,26 +595,33 @@ class Exp:
 		if len(self.raw) > 1 or len(self.raw) < 1:
 			throw_error("Parser error handling <exp>", addl="expected exactly 1 <exp>, got " + str(len(self.raw)) + ": " + str(self.raw))
 						
-		# TODO, uncomment
-		#except Exception as e:
-		#	throw_error("Syntax error while parsing <exp>")
-		#	if DEBUG_LEVEL > 0.5:
-		#		print("DEBUG: Exception: " + str(e))
+		# except Exception as e:# TODO uncomment
+			# throw_error("Syntax error while parsing <exp>")
+			# if DEBUG_LEVEL > 0.5:
+				# print("DEBUG: Exception: " + str(e))
 
 class Factor(): # TODO
 
 	def __init__(self):
 		self.type = "Factor"
+		self.id = None
 		self.unop = None
 		self.subfactor = None
 		self.valid = False
 		self.literal = None
+		self.actuals = []
 		
 	def set_valid(self, v):
 		self.valid = v
 		
 	def set_unop(self, u):
 		self.unop = u
+		
+	def set_id(self, i):
+		self.id = i
+		
+	def add_actual(self, a):
+		self.actuals.append(a)
 		
 	def set_subfactor(self, s):
 		self.subfactor = s
@@ -618,11 +699,9 @@ def throw_error(reason, addl=""):
 		error_msg += "\n" + addl
 	stacktrace()
 
-			
-# TODO
-#def token_lookahead():
+
 	
-			
+	
 def run(input, output):
 	import os
 	global line_count
@@ -636,15 +715,15 @@ def run(input, output):
 			if DEBUG_LEVEL > 2.5 and not illegal:
 				print("DEBUG: ------- waiting for ready (press enter to continue)")
 				raw_input()
-			line = file.readline()
-			# TODO more here?
-		
+			line = file.readline()		
 		
 	with open(output, 'w') as file:
 		if illegal:
 			file.write("(illegal)")
 		else:
-			file.write(ast_to_string(ast, "", 0))
+			if ast_string == "":
+				ast_to_string()
+			file.write(ast_string)
 
 	if illegal:
 		print("\nEncountered syntax error while parsing " + str(input) + ":")
@@ -684,15 +763,16 @@ def check_current_obj():
 	global object_stack
 	global object_stack_type
 	if current_obj == None:
-		if object_stack[0] != None:
-			# pop object stack
-			current_obj = object_stack[0]
-			current_obj_type = object_type_stack[0]
-			object_stack = object_stack[1:]
-			object_stack_type = object_stack_type[1:]
-			if DEBUG_LEVEL > 0:
-				print("Object stack popped. Current obj = " + current_obj_type)
-				print("Remaining obj stack = " + str(object_stack_type))
+		if len(object_stack) > 0:
+			if object_stack[0] != None:
+				# pop object stack
+				current_obj = object_stack[0]
+				current_obj_type = object_type_stack[0]
+				object_stack = object_stack[1:]
+				object_stack_type = object_stack_type[1:]
+				if DEBUG_LEVEL > 0:
+					print("Object stack popped. Current obj = " + current_obj_type)
+					print("Remaining obj stack = " + str(object_stack_type))
 	
 # Find the handler to the token, a handler handler
 def add_to_ast(token):
@@ -706,6 +786,9 @@ def add_to_ast(token):
 	
 	check_current_obj()
 	
+	if expecting[0] == "<end>":
+		throw_error("Encountered token <" + token + "> while expecting end of program")
+
 	try:
 		handler = TOKEN_TO_HANDLER[expecting[0]]	
 		if DEBUG_LEVEL > 1:
@@ -739,29 +822,37 @@ def assert_obj_type(t):
 	else:
 		throw_error("Parser Error: Encountered a " + t + " while expecting object of type " + str(current_obj_type))
 		return False
-		
 	
-# A recursive handler for taking the AST array and formatting it into a string for .ast output
-def ast_to_string(ast, out, indent_level):
-	if indent_level == 0:
-		out += "(program\n"
-	indent = indent_level + 1
 	
-	# TODO redo this section now that I'm using classes
-	"""
-	for e in ast:
-		if hasattr(next, "__len__"): # check if we need to recurse
-			out += ast_to_string(e, out, indent)
-		else:
-			# TODO 
-			print("Not sure what to do here, e is not array: " + str(e))
+def recursive_ast_to_string(ast, out, indent_level):
+	# A recursive handler for taking the AST array and formatting it into a string for .ast output
 	
-		# TODO more here
-	"""
+	# if DEBUG_LEVEL > 1:
+		# print("DEBUG: AST = " + str(ast))
+
+	# if indent_level == 0:
+		# out += "(program\n"
+	# indent = indent_level + 1
 	
-	out += ")"
+	# # TODO redo this section now that I'm using classes
+	# """
+	# for e in ast:
+		# if hasattr(next, "__len__"): # check if we need to recurse
+			# out += ast_to_string(e, out, indent)
+		# else:
+			# # TODO 
+			# print("Not sure what to do here, e is not array: " + str(e))
+	
+		# # TODO more here
+	# """
+	
+	# out += ")"
+	
 	return out
-			
+	
+	
+def ast_to_string():	
+	return recursive_ast_to_string(ast, "", 0)
 
 		
 def handle_protodecs(token):
@@ -774,12 +865,66 @@ def handle_protodecs(token):
 			push_stack()
 		current_obj = Protocol()
 		current_obj_type = "Protocol"
-		ast.append(current_obj) # TODO fix?
+		ast.append(current_obj)
 	else:
 		# no more protodecs, find a new handler
 		expecting = expecting[1:]
 		add_to_ast(token)
+		
+		
+def handle_protodec(token):
+	global expecting
+	global current_obj
+	global current_obj_type
+	if assert_obj_type("Protocol"):
+		# expect id first
+		if current_obj.typeid == None:
+			if is_id(token):
+				current_obj.set_typeid(token)
+				add_typeid(token) # define new typeid
+			else:
+				throw_error("Encountered " + token + " while expecting a typeid for a <protodec>")
+		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
+		elif ',' == token: # expect another tvar
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Too many commas in typevars?")
+			current_obj.set_expecting(True)
+		elif ',' in token: # comma is part of another token
+			for raw_token in token.split(','):
+				t = raw_token.strip() # double check no whitespace
+				add_to_ast(t)
+				add_to_ast(',') # splitting on commas, put commas back
+		elif is_tvar(token): # no comma
+			current_obj.add_typevar(token)
+			current_obj.set_expecting(False)
+		elif token == "extends":
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				expecting.insert(0, "<extends-rest>")
+		elif '{' in token:
+			if current_obj.expecting_more_vars:
+				throw_error("Syntax error", addl="Expecting another typevar")
+			else:
+				if '{' == token:
+					expecting.insert(0, "<funprotos>")
+				else:
+					throw_error("Syntax error while parsing a <protodec>")
+		elif '}' in token:
+			if '}' is token:
+				expecting = expecting[1:]
+				if assert_obj_type("Protocol"):
+					pop_stack()
+				else:
+					throw_error("Parser error handling <protodec>")
+			else:
+				read_tight_code(token)
+		else:
+			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
+	else:
+		throw_error("Protocol expected")
 
+		
 def handle_rtype(token):
 	global expecting
 	if ':' in token or ')' in token or ';' in token:
@@ -821,7 +966,6 @@ def handle_formals(token):
 				push_stack()
 			current_obj = Formal()
 			current_obj_type = "Formal"
-			ast.append(current_obj) # TODO fix?
 			current_obj.set_type(token)
 	else:
 		throw_error("Encountered " + token + " while expecting a <type> for a <formal>")
@@ -850,55 +994,7 @@ def handle_formal(token):
 		current_obj.add_formal(formal_obj)
 		expecting = expecting[1:] # formal finished
 
-		
-def handle_protodec(token):
-	global expecting
-	global current_obj
-	global current_obj_type
-	if assert_obj_type("Protocol"):
-		# expect id first
-		if current_obj.typeid == None:
-			if is_id(token):
-				current_obj.set_typeid(token)
-			else:
-				throw_error("Encountered " + token + " while expecting a typeid for a <protodec>")
-		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
-		elif ',' == token: # expect another tvar
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Too many commas in typevars?")
-			current_obj.set_expecting(True)
-		elif ',' in token: # comma is part of another token
-			for raw_token in token.split(','):
-				t = raw_token.strip() # double check no whitespace
-				add_to_ast(t)
-				add_to_ast(',') # splitting on commas, put commas back
-		elif is_tvar(token): # no comma
-			current_obj.add_typevar(token)
-			current_obj.set_expecting(False)
-		elif token == "extends":
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Expecting another typevar")
-			else:
-				expecting.insert(0, "<extends-rest>")
-		elif '{' in token:
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Expecting another typevar")
-			else:
-				if '{' == token:
-					expecting.insert(0, "<funprotos>")
-				else:
-					throw_error("Syntax error while parsing a <protodec>")
-		elif '}' in token:
-			if '}' is token:
-				expecting = expecting[1:]
-			else:
-				read_tight_code(token)
-		else:
-			throw_error("Encountered " + token + " while parsing a " + str(current_obj_type))
-	else:
-		throw_error("Protocol expected")
 
-		
 def handle_classdecs(token):
 	global expecting
 	global current_obj
@@ -909,10 +1005,10 @@ def handle_classdecs(token):
 			push_stack()
 		current_obj = Class()
 		current_obj_type = "Class"
-		ast.append(current_obj) # TODO fix?
-	else:
+		ast.append(current_obj)
+	elif '}' == token:
 		expecting = expecting[1:] # rest of classdecs is empty
-		add_to_ast(token) # find a new handler
+		pop_stack()
 		
 def handle_classdec(token):
 	global expecting
@@ -924,7 +1020,7 @@ def handle_classdec(token):
 			if is_id(token):
 				current_obj.set_id(token)
 			else:
-				throw_error("Encountered " + token + " while expecting a typeid for a <classdec>")
+				throw_error("Encountered " + token + " while expecting an <id> for a <classdec>")
 		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
 		elif ',' == token: # expect another tvar
 			if current_obj.expecting_more_vars:
@@ -956,6 +1052,10 @@ def handle_classdec(token):
 		elif '}' in token:
 			if '}' is token:
 				expecting = expecting[1:] # consume token, done with classdec
+				if assert_obj_type("Class"):
+					pop_stack()
+				else:
+					throw_error("Parser error handling <classdec>")
 			else:
 				read_tight_code(token)
 		else:
@@ -1038,6 +1138,7 @@ def handle_classbody(token):
 				throw_error("Expecting (<formals>) for <init> of <classbody>")
 			elif '{' in token:
 				if '{' is token:
+					expecting[0] = "<bodydecs-plus-bracket>"
 					expecting.insert(0, "<block>")
 					if current_obj:
 						push_stack()
@@ -1045,16 +1146,15 @@ def handle_classbody(token):
 					current_obj_type = "Block"
 				else:
 					read_tight_code(token)
-			# assume block handler adds the block to our obj and consumes }
+			# assume block handler adds the block to our obj
 			else:
-				expecting.insert(0, "<bodydecs>")
-				add_to_ast(token) # don't consume token
-				# then bodydecs TODO   <constdec> or <globaldec> or <fielddec> or <fundec>
-				# finally if }, return, consume expecting, don't consume token (classdec will)
-
-		# TODO ensure added all this back to current obj
-		# -- add_block
-		# -- add_bodydec
+				throw_error("Syntax error while parsing <classbody>")
+		
+def handle_bodydecs_plus_bracket(token):
+	if token != '}':
+		throw_error("End of <block> expected before <bodydecs>")
+	else:
+		expecting[0] = "<bodydecs>"
 		
 # redirecter for figuring out which dec is next
 def handle_bodydecs(token):
@@ -1089,7 +1189,10 @@ def handle_bodydecs(token):
 		add_to_ast(token) # don't consume token
 	elif '}' in token:
 		if '}' is token:
-			expecting = expecting[1:]
+			print("Expecting: " + str(expecting)) # TODO remove
+			expecting = expecting[2:] # done with class too
+			print("Expecting: " + str(expecting)) # TODO remove
+			add_to_ast(token)
 	
 	
 def handle_funprotos(token):
@@ -1102,7 +1205,6 @@ def handle_funprotos(token):
 			push_stack()
 		current_obj = Funproto()
 		current_obj_type = "Funproto"
-		ast.append(current_obj) # TODO fix?
 	else:
 		expecting = expecting[1:] # rest of funprotos is empty
 		add_to_ast(token) # find a new handler
@@ -1344,7 +1446,7 @@ def handle_fundec(token):
 			expecting = expecting[1:] # end of fundec
 			fd_obj = current_obj
 			pop_stack()
-			current_obj.add_dec(fd_obj) # FIXME?
+			current_obj.add_dec(fd_obj)
 		else:
 			throw_error("Syntax error in <fundec>")
 		
@@ -1366,7 +1468,7 @@ def handle_exp(token, end):
 		for c in ['(',')', '[', ']']:
 			if c in token:
 				read_tight_code(token)
-				break
+				return
 		if ';' in token:
 			if ';' == token:
 				if ';' == end:
@@ -1378,6 +1480,7 @@ def handle_exp(token, end):
 					expecting = expecting[1:] # exp finished
 			else:
 				read_tight_code(token)
+				return
 		else:
 			current_obj.raw_append(token) # if we got here, no special chars, just add token
 	else:
@@ -1446,8 +1549,11 @@ def handle_block(token):
 	global expecting
 	global current_obj
 	global current_obj_type
-	if not assert_obj_type("Block"):
-		throw_error("Block expected")
+	if current_obj_type != "Block":
+		if current_obj:
+			push_stack()
+		current_obj = Block()
+		current_obj_type = "Block"
 	else:
 		if current_obj.dec_phase:
 			if "fun" is token:
@@ -1456,8 +1562,6 @@ def handle_block(token):
 					push_stack()
 				current_obj = Fundec()
 				current_obj_type = "Fundec"
-				ast.append(current_obj) # TODO fix?
-				add_to_ast(token) # return to handler
 			elif is_type(token):
 				expecting.insert(0, "<vardec>")
 				if current_obj:
@@ -1484,7 +1588,6 @@ def handle_block(token):
 				push_stack()
 			current_obj = Stm()
 			current_obj_type = "Stm"
-			ast.append(current_obj) # TODO fix?
 			add_to_ast(token)
 	
 	
@@ -1493,6 +1596,11 @@ def handle_stm(token):
 	global expecting
 	global current_obj
 	global current_obj_type
+	if current_obj is None: # assume last stm of program
+		current_obj = Stm()
+		current_obj_type = "Stm"
+		current_obj.independent = True
+		ast.append(current_obj)
 	assert_obj_type("Stm")
 	handled = False
 	for key in STM_REDIRECTS.keys():
@@ -1500,6 +1608,8 @@ def handle_stm(token):
 			if key == token:
 				handled = True
 				expecting[0] = STM_REDIRECTS[key]
+				if key == "{" and current_obj.independent:
+					expecting.insert(1, "<stm-finish>")
 				if key != "return": # consume return
 					add_to_ast(token) # return to handler
 			else:
@@ -1507,12 +1617,24 @@ def handle_stm(token):
 	if not handled:
 		expecting[0] = "<stm-exp>"
 		add_to_ast(token)
+		
+def handle_stm_finish(token):
+	global expecting
+	if token == '}':
+		expecting = expecting[1:]
+	else:
+		throw_error("Expected end of block")
 	
 def handle_stm_empty(token):
 	global expecting
 	global current_obj
 	global current_obj_type
-	throw_error("Parser not defined for syntax <stm-empty>") # TODO
+	current_obj.style = "empty"
+	# add stm to its parent object
+	if not current_obj.independent:
+		stm_obj = current_obj
+		pop_stack()
+		current_obj.add_stm(stm_obj)
 
 def handle_stm_if(token):
 	global expecting
@@ -1544,10 +1666,11 @@ def handle_stm_exp(token):
 	elif expecting[0] == "<stm-exp-rest>":
 		expecting = expecting[1:]
 		# add stm to its parent object
-		stm_obj = current_obj
-		pop_stack()
-		current_obj.add_stm(stm_obj)
-		add_to_ast(token)
+		if not current_obj.independent:
+			stm_obj = current_obj
+			pop_stack()
+			current_obj.add_stm(stm_obj)
+			add_to_ast(token)
 	
 	else:
 		throw_error("Syntax error while parsing <stm> :: <exp> ;")
@@ -1564,9 +1687,10 @@ def handle_stm_return(token):
 		add_to_ast(token)
 	
 	# add stm to its parent object
-	stm_obj = current_obj
-	pop_stack()
-	current_obj.add_stm(stm_obj)
+	if not current_obj.independent:
+		stm_obj = current_obj
+		pop_stack()
+		current_obj.add_stm(stm_obj)
 
 def handle_stm_halt(token):
 	throw_error("Parser not defined for syntax <stm-halt>") # TODO
@@ -1588,10 +1712,14 @@ def pop_stack():
 	global current_obj_type
 	global object_stack
 	global object_type_stack
-	current_obj = object_stack[0]
-	current_obj_type = object_type_stack[0]
-	object_stack = object_stack[1:]
-	object_type_stack = object_type_stack[1:]
+	if len(object_stack) > 0:
+		current_obj = object_stack[0]
+		current_obj_type = object_type_stack[0]
+		object_stack = object_stack[1:]
+		object_type_stack = object_type_stack[1:]
+	else:
+		current_obj = None
+		current_obj_type = None
 
 def is_type(token): # TODO more needed here
 	valid = False
@@ -1698,8 +1826,15 @@ def is_literal(token):
 		return is_charliteral(token) or is_stringliteral(token) \
 				or is_intliteral(token) or is_floatliteral(token)
 	
+def add_typeid(token):
+	global typeids
+	typeids.append(token)
+	
+def is_typeid(token):
+	return token in typeids
+	
 def is_typeapp(token): # TODO, can also be <typeid> < <types> >
-	return is_id(token) or is_tvar(token)
+	return is_typeid(token) or is_tvar(token)
 
 
 TOKEN_TO_HANDLER = { 
@@ -1717,6 +1852,7 @@ TOKEN_TO_HANDLER = {
 "<implements-rest>" : handle_implements,
 "<classbody>" : handle_classbody,
 "<bodydecs>" : handle_bodydecs,
+"<bodydecs-plus-bracket>" : handle_bodydecs_plus_bracket,
 "<constdec>" : handle_constdec,
 "<globaldec>" : handle_globaldec,
 "<fielddec>" : handle_fielddec,
@@ -1734,6 +1870,7 @@ TOKEN_TO_HANDLER = {
 "<stm-halt>" : handle_stm_halt,
 "<stm-exp>" : handle_stm_exp,
 "<stm-exp-rest>" : handle_stm_exp,
+"<stm-finish>" : handle_stm_finish,
 "<block>" : handle_block,
 }			
 			

@@ -41,7 +41,7 @@ current_obj = None
 current_obj_type = None
 object_stack = [None]
 object_type_stack = ["None"]
-DEBUG_LEVEL = 1
+DEBUG_LEVEL = 2
 
 
 
@@ -209,6 +209,18 @@ class Block:
 	def add_stm(self, s):
 		self.stms.append(s)
 		
+class Stm:
+	def __init__(self):
+		self.style = None # {"empty", "exp", "if", "while", "return", "block", "halt"
+		self.exps = []
+		
+	def set_style(self, s):
+		self.style = s
+		
+	def add_exp(self, e):
+		self.exps.append(e)
+		
+		
 class Dec:
 
 	def __init__(self):
@@ -288,40 +300,61 @@ class Exp:
 		if self.current_factor == None:
 			self.current_factor = Factor()
 		
+	# iterate through raw string turning tokens into factors
 	def make_factors(self):
-	# check for factor-unop
-		for token in self.raw:
-			un = False # FIXME? 
-			for u in UNOPS:
-				if u in token:
-					if u is token:
-						self.new_factor()
-						self.handle_factor_unop()
-						un = True
-					else:
-						read_tight_code(token)  # TODO might need internal handler
-			if un:
-				continue
-			if is_literal(token):
-				self.new_factor()
-				self.handle_factor_lit()
-			elif token == "new":
-				self.new_factor()
-				self.handle_factor_new()
-			elif token == "lambda":
-				self.new_factor()
-				self.handle_factor_lam()
-			elif '(' in token:
-				if '(' is token:
+		self.index = 0
+		while self.index < len(self.raw):
+			self.make_factor()
+			try:
+				if "Factor" == self.raw[self.index].type:
+					if DEBUG_LEVEL > 1.5:
+						print("DEBUG: factor index = " + str(self.index))
+						print("DEBUG: raw = " + str(self.raw))
+					self.index += 1
+			except Exception as e:
+				pass
+	
+	# handler for how to compose factor based on first token
+	def make_factor(self):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: factor index = " + str(self.index))
+			print("DEBUG: raw = " + str(self.raw))
+		# check for factor-unop
+		token = self.raw[self.index]
+		for u in UNOPS:
+			if u in token:
+				if u is token:
 					self.new_factor()
-					self.handle_factor_exp()
-				else:
-					read_tight_code(token) # TODO might need internal handler
-			elif is_id(token):
+					self.handle_factor_unop()
+				else: # tight unop
+					new_tokens = read_tight_code(token,internal=True)
+					for n in new_tokens:
+						self.raw.insert(i, n)
+					return
+		# no unop, continue
+		if is_literal(token):
+			self.new_factor()
+			self.handle_factor_lit()
+		elif token == "new":
+			self.new_factor()
+			self.handle_factor_new()
+		elif token == "lambda":
+			self.new_factor()
+			self.handle_factor_lam()
+		elif '(' in token:
+			if '(' is token:
 				self.new_factor()
-				self.handle_factor_id()
+				self.handle_factor_exp()
 			else:
-				throw_error("Syntax error while parsing <factor>")
+				new_tokens = read_tight_code(token,internal=True)
+				for n in new_tokens:
+					self.raw.insert(i, n)
+				return
+		elif is_id(token):
+			self.new_factor()
+			self.handle_factor_id()
+		else:
+			throw_error("Syntax error while parsing <factor>")
 	
 	def handle_factor_unop(self):
 		if not self.current_factor:
@@ -369,27 +402,30 @@ class Exp:
 			throw_error("Assertion error: current <factor> is None while parsing <factor-rest>")
 		
 		specials = ['(', '.', '[']
-		
-		# TODO get token from raw[index], keep going until valid factor or error
-		
+				
 		handled = False
 		
-		for s in specials:
-			if s in token:
-				if s != token:
-					read_tight_code(token) # FIXME might need internal handler
-				else:
-					if s == '(':
-						handled = True
-						pass # TODO expect ( <actuals> ) <factor-rest>
-					elif s == '.':
-						handled = True
-						pass # TODO expect . <id> <factor-rest>
-					elif s == '[':
-						handled = True
-						pass # TODO expect [ <exp> ] <factor-rest>
+		if len(self.raw):
+			for s in specials:
+				if s in self.raw[self.index]:
+					if s != token:
+						new_tokens = read_tight_code(token,internal=True)
+						for n in new_tokens:
+							self.raw.insert(i, n)
+						self.handle_factor_rest()
+						return
 					else:
-						throw_error("Syntax error while parsing <factor-rest>")
+						if s == '(':
+							handled = True
+							pass # TODO expect ( <actuals> ) <factor-rest>
+						elif s == '.':
+							handled = True
+							pass # TODO expect . <id> <factor-rest>
+						elif s == '[':
+							handled = True
+							pass # TODO expect [ <exp> ] <factor-rest>
+						else:
+							throw_error("Syntax error while parsing <factor-rest>")
 		
 		if not handled:
 			# factor done
@@ -399,74 +435,77 @@ class Exp:
 		
 	# Given raw string of <exp>, construct the abstract representations that compose it
 	def compile(self):
-		try:
-			self.make_factors() # convert all pieces into factors and ops
-			
-			while self.has_op(MULOPS): # TODO assert left and right are factors
-				for i in range(len(self.raw)):
-					if self.raw[i] in MULOPS:
-						term = Term()
-						term.set_op = self.raw[i]
-						term.set_right = self.raw.pop(i+1)
-						term.set_left = self.raw[i-1]
-						self.raw[i-1] = term
+		#try: # TODO uncomment, indent everything else
+		self.make_factors() # convert all pieces into factors and ops
+		
+		while self.has_op(MULOPS): # TODO assert left and right are factors
+			for i in range(len(self.raw)):
+				if self.raw[i] in MULOPS:
+					term = Term()
+					term.set_op = self.raw[i]
+					term.set_right = self.raw.pop(i+1)
+					term.set_left = self.raw[i-1]
+					self.raw[i-1] = term
+				
+		while self.has_op(ADDOPS):# TODO assert left is term and right is simple
+		# TODO convert any remaining to simple
+			for i in range(len(self.raw)):
+				if self.raw[i] in ADDOPS:
+					simple = Simple()
+					simple.set_op = self.raw[i]
+					simple.set_right = self.raw.pop(i+1)
+					simple.set_left = self.raw[i-1]
+					self.raw[i-1] = simple
 					
-			while self.has_op(ADDOPS):# TODO assert left is term and right is simple
-			# TODO convert any remaining to simple
-				for i in range(len(self.raw)):
-					if self.raw[i] in ADDOPS:
-						simple = Simple()
-						simple.set_op = self.raw[i]
-						simple.set_right = self.raw.pop(i+1)
-						simple.set_left = self.raw[i-1]
-						self.raw[i-1] = simple
+		while self.has_op(RELOPS):# TODO assert left and right are simples
+		# TODO convert any remaining to conjunct
+			for i in range(len(self.raw)):
+				if self.raw[i] in RELOPS:
+					conjunct = Conjunct()
+					conjunct.set_op = self.raw[i]
+					conjunct.set_right = self.raw.pop(i+1)
+					conjunct.set_left = self.raw[i-1]
+					self.raw[i-1] = conjunct
+					
+		while self.has_op(ANDOPS):# TODO assert left is conjunct and right is disjunct
+		# TODO convert any remaining to disjunct
+			for i in range(len(self.raw)):
+				if self.raw[i] in ANDOPS:
+					disjunct = Disjunct()
+					disjunct.set_op = self.raw[i]
+					disjunct.set_right = self.raw.pop(i+1)
+					disjunct.set_left = self.raw[i-1]
+					self.raw[i-1] = disjunct
+					
+		while self.has_op(OROPS):# TODO assert left is disjunct and right is lhs
+		# TODO convert any remaining to lhs
+			for i in range(len(self.raw)):
+				if self.raw[i] in OROPS:
+					lhs = LHS()
+					lhs.set_op = self.raw[i]
+					lhs.set_right = self.raw.pop(i+1)
+					lhs.set_left = self.raw[i-1]
+					self.raw[i-1] = lhs
+					
+		while self.has_op(ASSIGNOPS):# TODO assert left is lhs and right is exp
+		# TODO convert any remaining to exp
+			for i in range(len(self.raw)):
+				if self.raw[i] in ASSIGNOPS:
+					exp = Exp()
+					exp.set_op = self.raw[i]
+					exp.set_right = self.raw.pop(i+1)
+					exp.set_left = self.raw[i-1]
+					self.raw[i-1] = exp
+					
+		# TODO assert there is only one exp
+		if len(self.raw) > 1 or len(self.raw) < 1:
+			throw_error("Parser error handling <exp>", addl="expected exactly one <exp>, got " + str(len(self.raw)))
 						
-			while self.has_op(RELOPS):# TODO assert left and right are simples
-			# TODO convert any remaining to conjunct
-				for i in range(len(self.raw)):
-					if self.raw[i] in RELOPS:
-						conjunct = Conjunct()
-						conjunct.set_op = self.raw[i]
-						conjunct.set_right = self.raw.pop(i+1)
-						conjunct.set_left = self.raw[i-1]
-						self.raw[i-1] = conjunct
-						
-			while self.has_op(ANDOPS):# TODO assert left is conjunct and right is disjunct
-			# TODO convert any remaining to disjunct
-				for i in range(len(self.raw)):
-					if self.raw[i] in ANDOPS:
-						disjunct = Disjunct()
-						disjunct.set_op = self.raw[i]
-						disjunct.set_right = self.raw.pop(i+1)
-						disjunct.set_left = self.raw[i-1]
-						self.raw[i-1] = disjunct
-						
-			while self.has_op(OROPS):# TODO assert left is disjunct and right is lhs
-			# TODO convert any remaining to lhs
-				for i in range(len(self.raw)):
-					if self.raw[i] in OROPS:
-						lhs = LHS()
-						lhs.set_op = self.raw[i]
-						lhs.set_right = self.raw.pop(i+1)
-						lhs.set_left = self.raw[i-1]
-						self.raw[i-1] = lhs
-						
-			while self.has_op(ASSIGNOPS):# TODO assert left is lhs and right is exp
-			# TODO convert any remaining to exp
-				for i in range(len(self.raw)):
-					if self.raw[i] in ASSIGNOPS:
-						exp = Exp()
-						exp.set_op = self.raw[i]
-						exp.set_right = self.raw.pop(i+1)
-						exp.set_left = self.raw[i-1]
-						self.raw[i-1] = exp
-						
-			# TODO assert there is only one exp
-						
-		except Exception as e:
-			throw_error("Syntax error while parsing <exp>")
-			if DEBUG_LEVEL > 0.5:
-				print("DEBUG: Exception: " + str(e))
+		# TODO, uncomment
+		#except Exception as e:
+		#	throw_error("Syntax error while parsing <exp>")
+		#	if DEBUG_LEVEL > 0.5:
+		#		print("DEBUG: Exception: " + str(e))
 
 class Factor(): # TODO
 
@@ -657,14 +696,17 @@ def add_to_ast(token):
 
 # handle tokens that have less whitespace than we hope for, such as (int) or :void
 # puts space between all special characters
-def read_tight_code(token):
+def read_tight_code(token, internal=False):
 	tight_tokens = ['(', ')', '{', '}', ',', ':', ';']
 	new_line = token
 	for t in tight_tokens:
 		new_line = new_line.replace(t, " " + t + " ")
 	if DEBUG_LEVEL > 1:
 		print("DEBUG: \'" + token + "\' loosened to \'" + new_line + "\'")
-	tokenize_line(new_line, repeat=True)
+	if not internal:
+		tokenize_line(new_line, repeat=True)
+	else:
+		return(new_line.split())
 		
 		
 	
@@ -1254,6 +1296,7 @@ def handle_fundec(token):
 		
 		
 def handle_exp(token, end):
+	global expecting
 	global exp_grammar_stack
 	global current_obj
 	global current_obj_type
@@ -1273,7 +1316,11 @@ def handle_exp(token, end):
 			if ';' == token:
 				if ';' == end:
 					current_obj.compile()
-					throw_error("Parser not defined for syntax <exp-semi>") # TODO return constructed exp to prev object
+					# add exp to its parent object
+					exp_obj = current_obj
+					pop_stack()
+					current_obj.add_exp(exp_obj)
+					expecting = expecting[1:] # exp finished
 			else:
 				read_tight_code(token)
 		else:
@@ -1290,7 +1337,11 @@ def handle_exp(token, end):
 			if len(exp_grammar_stack) == 0:
 				if token == end:
 					current_obj.compile()
-					throw_error("Parser not defined for syntax <exp-paren>") # TODO return constructed exp to prev object
+					# add exp to its parent object
+					exp_obj = current_obj
+					pop_stack()
+					current_obj.add_exp(exp_obj)
+					expecting = expecting[1:] # exp finished
 				else:
 					throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses")
 			else:
@@ -1302,7 +1353,11 @@ def handle_exp(token, end):
 			if len(exp_grammar_stack) == 0:
 				if token == end:
 					current_obj.compile()
-					throw_error("Parser not defined for syntax <exp-bracket>") # TODO return constructed exp to prev object
+					# add exp to its parent object
+					exp_obj = current_obj
+					pop_stack()
+					current_obj.add_exp(exp_obj)
+					expecting = expecting[1:] # exp finished
 				else:
 					throw_error("Syntax error while parsing <exp>", addl="Mismatching brackets")
 			else:
@@ -1313,7 +1368,12 @@ def handle_exp(token, end):
 		elif token == ';':
 			if len(exp_grammar_stack) == 0:
 				current_obj.compile()
-				throw_error("Parser not defined for syntax <exp-semi>") # TODO return constructed exp to prev object
+				# add exp to its parent object
+				exp_obj = current_obj
+				pop_stack()
+				current_obj.add_exp(exp_obj)
+				expecting = expecting[1:] # exp finished
+				
 			else:
 				throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses or brackets")
 		else:
@@ -1356,12 +1416,20 @@ def handle_block(token):
 				read_tight_code(token)
 		else:
 			expecting.insert(0, "<stm>")
+			if current_obj:
+				push_stack()
+			current_obj = Stm()
+			current_obj_type = "Stm"
+			ast.append(current_obj) # TODO fix?
 			add_to_ast(token)
 	
 	
 # redirect to more specific stm handlers based on first token of stm
 def handle_stm(token):
 	global expecting
+	global current_obj
+	global current_obj_type
+	assert_obj_type("Stm")
 	for key in STM_REDIRECTS.keys():
 		if key in token:
 			if key == token:
@@ -1372,21 +1440,40 @@ def handle_stm(token):
 				read_tight_code(token)
 	
 def handle_stm_empty(token):
-		throw_error("Parser not defined for syntax <stm-empty>") # TODO
+	global expecting
+	global current_obj
+	global current_obj_type
+	throw_error("Parser not defined for syntax <stm-empty>") # TODO
 
 def handle_stm_if(token):
+	global expecting
+	global current_obj
+	global current_obj_type
 	throw_error("Parser not defined for syntax <stm-if>") # TODO
 
 def handle_stm_while(token):
+	global expecting
+	global current_obj
+	global current_obj_type
 	throw_error("Parser not defined for syntax <stm-while>") # TODO
 	
 def handle_stm_for(token):
+	global expecting
+	global current_obj
+	global current_obj_type
 	throw_error("Parser not defined for syntax <stm-for>") # TODO
 	
 def handle_stm_return(token):
 	global expecting
+	global current_obj
+	global current_obj_type
 	if ';' == token:
+		current_obj.set_style("empty")
 		expecting = expecting[1:] # consume ;
+		# add stm to its parent object
+		stm_obj = current_obj
+		pop_stack()
+		current_obj.add_stm(stm_obj)
 	else:
 		expecting[0] = "<exp-semi>"
 		add_to_ast(token)
@@ -1478,8 +1565,8 @@ def is_floatliteral(token):
 	if token.find('.') == -1 or len(token) < 2: # can't be just '.'
 		return False
 	else:
-		before_dot = token[:token.find('.')
-		after_dot = token[token.find('.')+1:)
+		before_dot = token[:token.find('.')]
+		after_dot = token[(token.find('.')+1):]
 	before_valid = len(before_dot) == 0 or is_intliteral(before_dot)
 	if after_dot.find('e') == -1:
 		after_valid = len(after_dot) == 0 or is_intliteral(after_dot)

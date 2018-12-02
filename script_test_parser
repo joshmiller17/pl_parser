@@ -1,8 +1,14 @@
-#!/bin/sh
+#!/bin/bash
 
-files=( "jm_example1.q24" "example1.q24" )
+files=( "jm_example1" "jm_example2" "jm_example3" "example1" "example2" "example3" )
 
 for file in $files
 do
-	echo $file
+  input="$file.q24"
+  output1="$file_test.ast"
+  exec ./jmiller_parser24 $input $output1
+  output2="$file_correct.ast"
+  exec parser $input $output2
+  diff_file="$file_diff.log"
+  exec diff $output1 $output2 > $diff_file
 done

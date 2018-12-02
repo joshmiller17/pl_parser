@@ -8,7 +8,7 @@ do
   output1="$file_test.ast"
   exec ./jmiller_parser24 $input $output1
   output2="$file_correct.ast"
-  exec parser $input $output2
+  exec ./parser $input $output2
   diff_file="$file_diff.log"
   exec diff $output1 $output2 > $diff_file
 done

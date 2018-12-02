@@ -1,0 +1,55 @@
+(program
+  ((protoDec
+     fibber
+     ()
+     ()
+     ((funProto
+        fib
+        ()
+        ((formal (int) n)
+         (formal (funType ((int)) (int)) k))
+        (int)))))
+  ((classDec
+     fib
+     ()
+     ((typeApp fibber ()))
+     (init () (block () ()))
+     ((funDec
+        fib
+        ()
+        ((formal (int) n)
+         (formal (funType ((int)) (int)) k))
+        (int)
+        (block ()
+               ((if (binOpn < n (intLiteral 2))
+                    (return (call k (n)))
+                    (return
+                      (call fib
+                            ((binOpn - n (intLiteral 1))
+                             (lambda ((formal (int) r1))
+                               (int)
+                               (block ()
+                                      ((return
+                                         (call fib
+                                               ((binOpn - n (intLiteral 2))
+                                                (lambda ((formal (int) r2))
+                                                  (int)
+                                                  (block ()
+                                                         ((return
+                                                            (call k
+                                                                  ((binOpn
+                                                                     +
+                                                                     r1
+                                                                     r2)))))))))))))))))))))))
+  (block ((varDec (int) n (call readInt ()))
+          (varDec
+            (typeApp fibber ())
+            obj
+            (newObject fib ())))
+         ((expStm
+            (call printInt
+                  ((call (dot obj fib)
+                         (n (lambda ((formal (int) n))
+                              (int)
+                              (block () ((return n)))))))))
+          (expStm (call printLine ())))))

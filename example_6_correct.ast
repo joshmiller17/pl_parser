@@ -1,10 +1,5 @@
 (program
   ((protoDec
-     primes
-     ()
-     ()
-     ((funProto printPrimes () () (void))))
-   (protoDec
      list
      (T)
      ()
@@ -37,7 +32,19 @@
         map
         (T2)
         ((formal (funType ((tVar T)) (tVar T2)) f))
-        (typeApp list ((tVar T2)))))))
+        (typeApp list ((tVar T2))))))
+   (protoDec
+     foo
+     (T1 T2)
+     ()
+     ((funProto
+        find
+        (T1 T2)
+        ((formal (funType ((tVar T1) (tVar T2)) (bool)) f)
+         (formal (typeApp list ((tVar T1))) x)
+         (formal (typeApp list ((tVar T2))) y)
+         (formal (funType () (tVar T1)) notfound))
+        (tVar T1)))))
   ((classDec
      emptyList
      (T)
@@ -220,96 +227,101 @@
                           ((call f ((dot this lastItem)))))))
                 (return result))))))
    (classDec
-     eratosthenes
-     ()
-     ((typeApp primes ()))
-     (init ((formal (int) n))
-           (block ()
-                  ((expStm (assign (dot this n) n))
-                   (expStm (assign flags (newArray (bool) n)))
-                   (block ((varDec (int) i (intLiteral 0)))
-                          ((while (binOpn < i n)
-                                  (block ()
-                                         ((expStm
-                                            (assign (aref flags i) (true)))
-                                          (expStm
-                                            (assign
-                                              i
-                                              (binOpn
-                                                +
-                                                i
-                                                (intLiteral 1)))))))))
-                   (expStm
-                     (assign
-                       thePrimes
-                       (newObject (classApp emptyList ((int))) ()))))))
-     ((fieldDec (formal (int) n))
-      (fieldDec (formal (arrayOf (bool)) flags))
-      (fieldDec
-        (formal (typeApp list ((int))) thePrimes))
-      (funDec
-        printPrimes
-        ()
-        ()
-        (void)
+     bar
+     (T1 T2)
+     ((typeApp foo ((tVar T1) (tVar T2))))
+     (init () (block () ()))
+     ((funDec
+        find
+        (T1 T2)
+        ((formal (funType ((tVar T1) (tVar T2)) (bool)) f)
+         (formal (typeApp list ((tVar T1))) x)
+         (formal (typeApp list ((tVar T2))) y)
+         (formal (funType () (tVar T1)) notfound))
+        (tVar T1)
         (block ()
                ((if (binOpn
-                      and
-                      (binOpn > n (intLiteral 2))
-                      (call (dot thePrimes isEmpty) ()))
-                    (expStm (call sieve ()))
-                    (skip))
-                (expStm
-                  (call (dot thePrimes forEach)
-                        ((lambda ((formal (int) n))
-                           (void)
-                           (block ()
-                                  ((expStm (call printInt (n)))
-                                   (expStm (call printLine ())))))))))))
-      (funDec
-        sieve
-        ()
-        ()
-        (void)
-        (block ((varDec (int) p (intLiteral 2)))
-               ((expStm
-                  (assign (aref flags (intLiteral 0)) (false)))
-                (expStm
-                  (assign (aref flags (intLiteral 1)) (false)))
-                (while (binOpn < p n)
-                       (block ()
-                              ((if (aref flags p)
-                                   (block ((varDec (int) i (binOpn + p p)))
-                                          ((expStm
-                                             (assign
-                                               thePrimes
-                                               (call (dot thePrimes with)
-                                                     (p))))
-                                           (while (binOpn < i n)
-                                                  (block ()
-                                                         ((expStm
-                                                            (assign
-                                                              (aref flags i)
-                                                              (false)))
-                                                          (expStm
-                                                            (assign
-                                                              i
-                                                              (binOpn
-                                                                +
-                                                                i
-                                                                p))))))))
-                                   (skip))
-                               (expStm
-                                 (assign
-                                   p
-                                   (binOpn + p (intLiteral 1)))))))))))))
-  (block ((varDec (int) n (call readInt ()))
+                      or
+                      (call (dot x isEmpty) ())
+                      (call (dot y isEmpty) ()))
+                    (return (call notfound ()))
+                    (return
+                      (call find
+                            (f (call (dot x butLast) ())
+                               (call (dot y butLast) ())
+                               (lambda ()
+                                 (tVar T1)
+                                 (block ()
+                                        ((if (call f
+                                                   ((call (dot x last) ())
+                                                    (call (dot y last) ())))
+                                             (return (call (dot x last) ()))
+                                             (return
+                                               (call notfound
+                                                     ()))))))))))))))))
+  (block ((varDec
+            (typeApp list ((int)))
+            lessThanFive
+            (call (dot (call (dot (call (dot (call (dot (call (dot (newObject
+                                                                     (classApp
+                                                                       emptyList
+                                                                       ((int)))
+                                                                     ())
+                                                                   with)
+                                                              ((intLiteral 0)))
+                                                        with)
+                                                   ((intLiteral 1)))
+                                             with)
+                                        ((intLiteral 2)))
+                                  with)
+                             ((intLiteral 3)))
+                       with)
+                  ((intLiteral 4))))
           (varDec
-            (typeApp primes ())
-            g
-            (newObject eratosthenes (n))))
-         ((expStm (call (dot g printPrimes) ()))
+            (typeApp list ((float)))
+            moreThanFive
+            (call (dot (call (dot (call (dot (call (dot (call (dot (newObject
+                                                                     (classApp
+                                                                       emptyList
+                                                                       ((float)))
+                                                                     ())
+                                                                   with)
+                                                              ((floatLiteral
+                                                                 6.0)))
+                                                        with)
+                                                   ((floatLiteral 7.0)))
+                                             with)
+                                        ((floatLiteral 8.0)))
+                                  with)
+                             ((floatLiteral 9.0)))
+                       with)
+                  ((floatLiteral 10.0)))))
+         ((expStm
+            (call printInt
+                  ((call (dot (newObject (classApp bar ((int) (float))) ())
+                              find)
+                         ((lambda ((formal (int) n) (formal (float) x))
+                            (bool)
+                            (block () ((return (binOpn > n x)))))
+                          lessThanFive
+                          moreThanFive
+                          (lambda ()
+                            (int)
+                            (block ()
+                                   ((return (unOpn - (intLiteral 1)))))))))))
           (expStm (call printLine ()))
-          (if (binOpn < n (intLiteral 20))
-              (expStm (call (dot g printPrimes) ()))
-              (skip)))))
+          (expStm
+            (call printInt
+                  ((call (dot (newObject (classApp bar ((int) (float))) ())
+                              find)
+                         ((lambda ((formal (int) n) (formal (float) x))
+                            (bool)
+                            (block () ((return (binOpn < n x)))))
+                          (call (dot (call (dot lessThanFive rest) ()) rest)
+                                ())
+                          moreThanFive
+                          (lambda ()
+                            (int)
+                            (block ()
+                                   ((return (unOpn - (intLiteral 1)))))))))))
+          (expStm (call printLine ())))))

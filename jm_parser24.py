@@ -1379,9 +1379,9 @@ def handle_bodydecs(token):
 		add_to_ast(token) # don't consume token
 	elif '}' in token:
 		if '}' is token:
-			print("Expecting: " + str(expecting)) # TODO remove
+			#print("Expecting: " + str(expecting)) # TODO remove
 			expecting = expecting[2:] # done with class too
-			print("Expecting: " + str(expecting)) # TODO remove
+			#print("Expecting: " + str(expecting)) # TODO remove
 			add_to_ast(token)
 	
 	
@@ -2074,7 +2074,7 @@ def main():
 	parser.add_argument('output', help="Output file name")
 	parser.add_argument('-debug', default=0, help="Level of debug info, from 0-3")
 	args = parser.parse_args()
-	DEBUG_LEVEL = args.debug
+	DEBUG_LEVEL = float(args.debug)
 	run(args.input, args.output)
 	
 

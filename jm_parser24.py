@@ -2067,11 +2067,14 @@ TOKEN_TO_HANDLER = {
 			
 def main():
 	import argparse
+	global DEBUG_LEVEL
 	prog_desc = "Quirk 24 parser by Josh Miller"
 	parser = argparse.ArgumentParser(description=prog_desc)
 	parser.add_argument('input', help="Input file name")
 	parser.add_argument('output', help="Output file name")
+	parser.add_argument('-debug', default=0, help="Level of debug info, from 0-3")
 	args = parser.parse_args()
+	DEBUG_LEVEL = args.debug
 	run(args.input, args.output)
 	
 

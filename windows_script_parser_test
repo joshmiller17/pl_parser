@@ -1,0 +1,10 @@
+#!/bin/sh
+input="jm_example4.q24"
+out1="jm_example4_test.ast"
+out2="jm_example4_correct.ast"
+diff_file="jm_example4_diff.log"
+echo "jm_example4"
+exec ./jmiller_parser24 $input $out1
+exec ./parser24 $input $out2
+exec diff $out1 $out2
+

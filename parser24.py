@@ -852,14 +852,45 @@ def recursive_ast_to_string(ast, out, indent_level):
 	
 	for obj in ast:
 		out += "\n" + INDENTATION * indent + "("
-	
-		# TODO
-	
-		#if obj is ...
 		
-		#elif obj is ...
-	
-	
+		if obj.__class__.__name__ == "Protocol":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Class":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Funproto":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Fundec":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Formal":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Block":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Stm":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Constdec":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Vardec":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "GlobalDec":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Fielddec":
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Exp":
+			pass # TODO
+			
+		else:
+			throw_error("Parser error while writing " + obj.__class__.__name__)
 	
 		out += ")"
 	return out

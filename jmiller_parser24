@@ -1,3 +1,2 @@
 #!/bin/sh
-
-python parser24.py $@
+python jm_parser24.py $@

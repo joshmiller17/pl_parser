@@ -216,10 +216,12 @@ class Block:
 		
 class Stm:
 	def __init__(self):
-		self.style = None # {"empty", "exp", "if", "while", "return", "block", "halt"
+		self.style = None # {"empty", "exp", "if", "while", "return", "block", "halt", "for"}
 		self.exps = []
+		self.stms = []
 		self.independent = False
 		self.block = None
+		self.vardec = None
 		
 	def set_style(self, s):
 		self.style = s
@@ -227,8 +229,14 @@ class Stm:
 	def add_block(self, b):
 		self.block = b
 		
+	def add_dec(self, d):
+		self.vardec = d
+		
 	def add_exp(self, e):
 		self.exps.append(e)
+		
+	def add_stm(self, s):
+		self.stms.append(s)
 		
 		
 class Dec:
@@ -851,42 +859,167 @@ def recursive_ast_to_string(ast, out, indent_level):
 		print("DEBUG: AST = \n" + str(ast) + "\n\n")	
 	
 	for obj in ast:
-		out += "\n" + INDENTATION * indent + "("
+		out += "\n" + INDENTATION * indent_level + "("
 		
 		if obj.__class__.__name__ == "Protocol":
-			pass # TODO
+			out += "protoDec " + str(obj.typeid) + " ( "
+			for tvar in obj.typevars:
+				out += str(tvar) + " "
+			out += ") ("
+			for typeapp in obj.extends:
+				out += str(typeapp) + " "
+			out += ") ("
+			for fp in obj.funprotos:
+				out = recursive_ast_to_string(fp, out, indent_level + 1)
+			out += ")"
 			
 		elif obj.__class__.__name__ == "Class":
-			pass # TODO
+			out += "classDec " + str(obj.id) + " ( "
+			for tvar in obj.typevars:
+				out += str(tvar) + " "
+			out += ") ("
+			for typeapp in obj.implements:
+				out += str(typeapp) + " "
+			out += ") (init ("
+			for formal in obj.init_formals():
+				out = recursive_ast_to_string(formal, out, indent_level + 1)
+			out += ")"
+			out = recursive_ast_to_string(obj.block, out, indent_level + 1)
+			out += ") ("
+			for bd in obj.bodydecs:
+				out = recursive_ast_to_string(bd, out, indent_level + 1)
+			out += "))"
 			
 		elif obj.__class__.__name__ == "Funproto":
-			pass # TODO
+			out += "funProto " + str(obj.id) + " ( "
+			for tvar in obj.typevars:
+				out += str(tvar) + " "
+			out += ") ("
+			for formal in obj.formals():
+				out = recursive_ast_to_string(formal, out, indent_level + 1)
+			out += ")"
+			if obj.rtype:
+				out += str(obj.rtype) + " "
+			else:
+				out += "(void) "
+			out += ")"
 			
 		elif obj.__class__.__name__ == "Fundec":
-			pass # TODO
+			out += "funDec " + str(obj.id) + " ( "
+			for tvar in obj.typevars:
+				out += str(tvar) + " "
+			out += ") ("
+			for formal in obj.formals():
+				out = recursive_ast_to_string(formal, out, indent_level + 1)
+			out += ")"
+			if obj.rtype:
+				out += str(obj.rtype) + " "
+			else:
+				out += "(void) "
+			out = recursive_ast_to_string(obj.block, out, indent_level + 1)
+			out += ")"
 			
 		elif obj.__class__.__name__ == "Formal":
-			pass # TODO
+			out += "formal " + str(obj.type) + " " + str(obj.id) + ")"
 			
 		elif obj.__class__.__name__ == "Block":
-			pass # TODO
+			out += "block ( "
+			for dec in obj.local_decs:
+				out = recursive_ast_to_string(dec, out, indent_level + 1)
+			out += ") ("
+			for stm in obj.stms():
+				out = recursive_ast_to_string(stm, out, indent_level + 1)
+			out += "))"
 			
 		elif obj.__class__.__name__ == "Stm":
-			pass # TODO
+			if obj.style == "empty":
+				out += "(skip)"
+			elif obj.style == "exp":
+				if len(obj.exps) != 1:
+					throw_error("Parser error: expected <expStm> to have exactly 1 <exp>")
+				out += "(expStm "
+				out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
+				out += ")"
+			elif obj.style == "if":
+				if len(obj.exps) != 1 or len(obj.stms) != 2:
+					throw_error("Parser error: expected <ifStm> to have exactly 1 <exp> and 2 <stm>")
+				out += "("
+				out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
+				out += " "
+				out = recursive_ast_to_string(obj.stms[0], out, indent_level + 1)
+				out += " "
+				out = recursive_ast_to_string(obj.stms[1], out, indent_level + 1)
+				out += ")"
+			elif obj.style == "while":
+				if len(obj.exps) != 1 or len(obj.stms) != 1:
+					throw_error("Parser error: expected <whileStm> to have exactly 1 <exp> and 1 <stm>")
+				out += "while "
+				out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
+				out = recursive_ast_to_string(obj.stms[0], out, indent_level + 1)
+				out += ")"
+			elif obj.style == "for":
+				if len(obj.exps) != 2 or len(obj.stms) != 1:
+					throw_error("Parser error: expected <forStm> to have exactly 2 <exp> and 1 <stm>")
+				out = recursive_ast_to_string(obj.vardec, out, indent_level + 1)
+				new_stm = obj
+				new_stm.set_style("while")
+				increment_exp = new_stm.exps.pop(1)
+				increment_stm = Stm()
+				increment_stm.set_style("exp")
+				increment_stm.add_exp(increment_exp)
+				new_stm.add_stm(increment_stm)
+				obj = recursive_ast_to_string(new_stm, out, indent_level + 1)
+			elif obj.style == "return":
+				if len(obj.exps):
+					out += "(return "
+					out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
+					out += ")"
+				else:
+					out += "(return0)"
+			elif obj.style == "block":
+				out += "("
+				out = recursive_ast_to_string(obj.block, out, indent_level + 1)
+			elif obj.style == "halt":
+				if len(obj.exps) != 1:
+					throw_error("Parser error: expected <haltStm> to have exactly 1 <exp>")
+				out += "(halt "
+				out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
+				out += ")"
 			
 		elif obj.__class__.__name__ == "Constdec":
-			pass # TODO
+			out += "constant " + str(obj.type) + " " + str(obj.id) + " " + str(obj.lit) + ")"
 			
 		elif obj.__class__.__name__ == "Vardec":
-			pass # TODO
+			out += "varDec " + str(obj.type) + " " + str(obj.id) + " "
+			out = recursive_ast_to_string(obj.exp, out, indent_level + 1)
+			out += ")"
 			
-		elif obj.__class__.__name__ == "GlobalDec":
-			pass # TODO
+		elif obj.__class__.__name__ == "Globaldec":
+			out += "static " + str(obj.type) + " " + str(obj.id) + " " + str(obj.lit) + ")"
 			
 		elif obj.__class__.__name__ == "Fielddec":
-			pass # TODO
+			out += "fieldDec (formal " + str(obj.type) + " " + str(obj.id) + ")" 
 			
 		elif obj.__class__.__name__ == "Exp":
+			out += "(exp)"
+			pass # TODO
+			
+		elif obj.__class__.__name__ == "Factor":
+			pass # TODO
+		
+		elif obj.__class__.__name__ == "LHS":
+			pass # TODO
+		
+		elif obj.__class__.__name__ == "Disjunct":
+			pass # TODO
+		
+		elif obj.__class__.__name__ == "Conjunct":
+			pass # TODO
+		
+		elif obj.__class__.__name__ == "Simple":
+			pass # TODO
+		
+		elif obj.__class__.__name__ == "Term":
 			pass # TODO
 			
 		else:

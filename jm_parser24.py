@@ -1046,7 +1046,7 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 	return out
 	
 def ast_to_string():
-	return setup_ast_to_string(protocols, classes, stms)
+	return setup_ast_to_string(protocols, classes, stms) + "\n"
 
 		
 def handle_protodecs(token):

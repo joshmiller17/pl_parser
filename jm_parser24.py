@@ -877,43 +877,48 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 		out += "\n" + INDENTATION * indent_level + "("
 	
 	if obj.__class__.__name__ == "Protocol":
-		out += "protoDec\n" + str(obj.typeid) + "\n( "
+		out += "protoDec\n" + str(obj.typeid) + "\n("
 		for tvar in obj.typevars:
 			out += str(tvar) + " "
 		out += ")\n("
 		for typeapp in obj.extends:
 			out += str(typeapp) + " "
-		out += ") ("
+		out += ")\n("
 		for fp in obj.funprotos:
-			out = recursive_ast_to_string(fp, out, indent_level + 1)
+			if fp == obj.funprotos[0]: # making format look like example
+				out = recursive_ast_to_string(fp, out, indent_level + 1, suppress_nl=True)
+			else:
+				out = recursive_ast_to_string(fp, out, indent_level + 1)
 		
 	elif obj.__class__.__name__ == "Class":
 		out += "classDec " + str(obj.id) + " ( "
 		for tvar in obj.typevars:
 			out += str(tvar) + " "
-		out += ") ("
+		out += ")("
 		for typeapp in obj.implements:
 			out += str(typeapp) + " "
-		out += ") (init ("
+		out += ")(init ("
 		for formal in obj.init_formals:
 			out = recursive_ast_to_string(formal, out, indent_level + 1)
-		out += ")"
+		out += ") "
 		out = recursive_ast_to_string(obj.block, out, indent_level + 1)
-		out += ") ("
+		out += ")("
 		for bd in obj.bodydecs:
 			out = recursive_ast_to_string(bd, out, indent_level + 1)
 		out += ")"
 		
 	elif obj.__class__.__name__ == "Funproto":
-		out += "funProto " + str(obj.id) + " ( "
+		out += "funProto " + str(obj.id) + " ("
 		for tvar in obj.typevars:
 			out += str(tvar) + " "
-		out += ") ("
+		out += ")\n("
 		for formal in obj.formals:
-			out = recursive_ast_to_string(formal, out, indent_level + 1)
-		out += ")"
+			out = recursive_ast_to_string(formal, out, indent_level + 1, suppress_nl=True)
+			if formal != obj.formals[-1]: # make formatting look like example
+				out += " "
+		out += ") "
 		if obj.rtype:
-			out += " " + str(obj.rtype) + " "
+			out += "\n(" + str(obj.rtype) + ")"
 		else:
 			out += "(void) "
 		
@@ -921,18 +926,18 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 		out += "funDec " + str(obj.id) + " ( "
 		for tvar in obj.typevars:
 			out += str(tvar) + " "
-		out += ") ("
+		out += ")("
 		for formal in obj.formals:
 			out = recursive_ast_to_string(formal, out, indent_level + 1)
 		out += ")"
 		if obj.rtype:
-			out += " " + str(obj.rtype) + " "
+			out += "\n(" + str(obj.rtype) + ")"
 		else:
 			out += "(void) "
 		out = recursive_ast_to_string(obj.block, out, indent_level + 1)
 		
 	elif obj.__class__.__name__ == "Formal":
-		out += "formal " + str(obj.type) + " " + str(obj.id) + ")"
+		out += "formal (" + str(obj.type) + ") " + str(obj.id)
 		
 	elif obj.__class__.__name__ == "Block":
 		out += "block ( "

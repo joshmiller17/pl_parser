@@ -37,7 +37,6 @@ expecting = ["<protodecs>", "<classdecs>", "<stm>", "<end>"] #initial syntax exp
 protocols = []
 classes = []
 stms = []
-ast_string = ""
 line_count = 0
 typeids = []
 exp_grammar_stack = []
@@ -752,10 +751,8 @@ def run(input, output):
 	with open(output, 'w') as file:
 		if illegal:
 			file.write("(illegal)")
-		else:
-			if ast_string == "":
-				ast_to_string()
-			file.write(ast_string)
+		else:	
+			file.write(ast_to_string())
 
 	if illegal:
 		print("\nEncountered syntax error while parsing " + str(input) + ":")
@@ -857,29 +854,33 @@ def assert_obj_type(t):
 	
 def setup_ast_to_string(protocols, classes, stms):
 	out = ""
-	out += "(program"
+	out += "(program\n("
 	indent = 1	
 	for p in protocols:
-		out = recursive_ast_to_string(p, out, indent)
+		out = recursive_ast_to_string(p, out, indent, suppress_nl=True)
+	out += ")("
 	for c in classes:
-		out = recursive_ast_to_string(c, out, indent)
+		out = recursive_ast_to_string(c, out, indent, suppress_nl=True)
 	for s in stms:
-		out = recursive_ast_to_string(s, out, indent)
+		out = recursive_ast_to_string(s, out, indent, suppress_nl=True)
 	out += ")"
 	return out
 	
 	
-def recursive_ast_to_string(obj, out, indent_level):
+def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 	if DEBUG_LEVEL > 1:
 		print("DEBUG: PRINTING AST FOR " + obj.__class__.__name__)
 	
-	out += "\n" + INDENTATION * indent_level + "("
+	if suppress_nl:
+		out += INDENTATION * indent_level + "("
+	else:
+		out += "\n" + INDENTATION * indent_level + "("
 	
 	if obj.__class__.__name__ == "Protocol":
-		out += "protoDec " + str(obj.typeid) + " ( "
+		out += "protoDec\n" + str(obj.typeid) + "\n( "
 		for tvar in obj.typevars:
 			out += str(tvar) + " "
-		out += ") ("
+		out += ")\n("
 		for typeapp in obj.extends:
 			out += str(typeapp) + " "
 		out += ") ("
@@ -2068,13 +2069,17 @@ TOKEN_TO_HANDLER = {
 def main():
 	import argparse
 	global DEBUG_LEVEL
+	global INDENTATION
 	prog_desc = "Quirk 24 parser by Josh Miller"
 	parser = argparse.ArgumentParser(description=prog_desc)
 	parser.add_argument('input', help="Input file name")
 	parser.add_argument('output', help="Output file name")
+	parser.add_argument('--indentoff', action='store_true', help="Set output to be an unindented AST (default indented)")
 	parser.add_argument('-debug', default=0, help="Level of debug info, from 0-3")
 	args = parser.parse_args()
 	DEBUG_LEVEL = float(args.debug)
+	if args.indentoff:
+		INDENTATION = ""
 	run(args.input, args.output)
 	
 

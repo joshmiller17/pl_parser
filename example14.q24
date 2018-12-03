@@ -1,0 +1,15 @@
+//Comment
+
+protocol p {
+    fun f (int d) : bool;
+}
+
+class c implements p {
+    () { }
+
+    fun f (int d) : bool {
+        return true;
+    }
+}
+
+    ;

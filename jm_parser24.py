@@ -1033,6 +1033,7 @@ def setup_ast_to_string(protocols, classes, stms):
 	out += ")("
 	for c in classes:
 		out = recursive_ast_to_string(c, out, indent, suppress_nl=True)
+	out += ")("
 	for s in stms:
 		out = recursive_ast_to_string(s, out, indent, suppress_nl=True)
 	out += ")"
@@ -1047,9 +1048,7 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 		out += INDENTATION * indent_level + "("
 	else:
 		out += "\n" + INDENTATION * indent_level + "("
-	
-	# TODO handle printing literals
-	
+		
 	if obj.__class__.__name__ == "Protocol":
 		out += "protoDec\n" + str(obj.typeid) + "\n("
 		for tvar in obj.typevars:
@@ -1063,6 +1062,8 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 				out = recursive_ast_to_string(fp, out, indent_level + 1, suppress_nl=True)
 			else:
 				out = recursive_ast_to_string(fp, out, indent_level + 1)
+		out += ")"
+
 		
 	elif obj.__class__.__name__ == "Class":
 		out += "classDec " + str(obj.id) + " ( "
@@ -1070,8 +1071,8 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 			out += str(tvar) + " "
 		out += ")("
 		for typeapp in obj.implements:
-			out += str(typeapp) + " "
-		out += ")(init ("
+			out += "(typeApp " + str(typeapp) + " "
+		out += "))(init ("
 		for formal in obj.init_formals:
 			out = recursive_ast_to_string(formal, out, indent_level + 1)
 		out += ") "
@@ -1262,6 +1263,20 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 			out += "))"
 		else:
 			throw_error("Parser error, undefined handling of <factor>") # TODO call, aref, actuals
+	elif obj.__class__.__name__ == "str":
+		# literal
+		if obj == "null" or obj == "true" or obj == "false":
+			out += "(" + obj + ")"
+		elif is_charliteral(obj):
+			out += "(charLiteral " + obj
+		elif is_stringliteral(obj):
+			out += "(stringLiteral " + obj
+		elif is_intliteral(obj):
+			out += "(intLiteral " + obj
+		elif is_floatliteral(obj):
+			out += "(floatLiteral " + obj
+		else:
+			throw_error("Parser error, unknown literal")
 			
 	
 		

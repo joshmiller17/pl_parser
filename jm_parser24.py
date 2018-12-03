@@ -978,9 +978,6 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 			out += "(skip)"
 		elif obj.style == "exp":
 			if len(obj.exps) != 1:
-				# TODO delete
-				for exp in obj.exps:
-					print("EXP: " + str(exp))
 				throw_error("Parser error: expected <expStm> to have exactly 1 <exp>, has " + str(len(obj.exps)))
 			out += "(expStm "
 			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
@@ -1410,9 +1407,7 @@ def handle_bodydecs(token):
 		add_to_ast(token) # don't consume token
 	elif '}' in token:
 		if '}' is token:
-			#print("Expecting: " + str(expecting)) # TODO remove
 			expecting = expecting[2:] # done with class too
-			#print("Expecting: " + str(expecting)) # TODO remove
 			add_to_ast(token)
 	
 	
@@ -2034,9 +2029,6 @@ def is_stringliteral(token):
 def is_charliteral(token):
 	return len(token) == 3 and token[0] == "\'" and token[2] == "\'" \
 		and is_valid_char(token[1])
-		
-def is_floatliteral(token):
-	return False # TODO
 		
 def is_literal(token):
 	if token == "null":

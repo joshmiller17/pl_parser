@@ -1,0 +1,18 @@
+(program
+  ((protoDec
+     p
+     ()
+     ()
+     ((funProto f () ((formal (int) d)) (bool)))))
+  ((classDec
+     c
+     ()
+     ((typeApp p ()))
+     (init () (block () ()))
+     ((funDec
+        f
+        ()
+        ((formal (int) d))
+        (bool)
+        (block () ((return (true))))))))
+  (skip))

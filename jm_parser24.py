@@ -439,7 +439,7 @@ class Exp:
 			else:
 				throw_error("Syntax error: expected <id> or <type> while parsing <factor>")
 		elif self.current_factor.id is not None and is_type(self.raw[self.index]):
-			throw_error("TODO factor new <id> <<types>>...") # TODO
+			throw_error("TODO factor new <id> <<types>>...")
 		elif self.current_factor.factor_type is not None and '[' == self.raw[self.index]:
 			self.raw.pop(self.index)
 			new_exp_end = self.raw.index(']')
@@ -1048,6 +1048,8 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 	else:
 		out += "\n" + INDENTATION * indent_level + "("
 	
+	# TODO handle printing literals
+	
 	if obj.__class__.__name__ == "Protocol":
 		out += "protoDec\n" + str(obj.typeid) + "\n("
 		for tvar in obj.typevars:
@@ -1186,25 +1188,82 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 	elif obj.__class__.__name__ == "Exp":
 		for r in obj.raw:
 			out = recursive_ast_to_string(r, out, indent_level + 1)
-		pass # TODO
-		
-	elif obj.__class__.__name__ == "Factor":
-		out += "TODO FACTOR " + str(obj.id) + " " + str(obj.unop) + " " + str(obj.subfactor) + " " + str(obj.literal) + " " + str(obj.actuals)
-	
 	elif obj.__class__.__name__ == "LHS":
-		out += "TODO LHS " + str(obj.op) + " " + str(obj.left) + " " + str(obj.right)
+		if obj.op is not None:
+			if obj.op not in ASSIGNOPS:
+				throw_error("Parser error: expected <lhs> to use <assignop>")
+			else:
+				out += "(assign "
+				out = recursive_ast_to_string(obj.left, out, indent_level + 1)
+				out = recursive_ast_to_string(obj.right, out, indent_level + 1)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
+				
 	
 	elif obj.__class__.__name__ == "Disjunct":
-		out += "TODO DISJUNCT " + str(obj.op) + " " + str(obj.left) + " " + str(obj.right)
+		if obj.op is not None:
+			out += "(binOpn "
+			out += obj.op + " "
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
+			out = recursive_ast_to_string(obj.right, out, indent_level + 1)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
 	
 	elif obj.__class__.__name__ == "Conjunct":
-		out += "TODO CONJUNCT " + str(obj.op) + " " + str(obj.left) + " " + str(obj.right)
+		if obj.op is not None:
+			out += "(binOpn "
+			out += obj.op + " "
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
+			out = recursive_ast_to_string(obj.right, out, indent_level + 1)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
 	
 	elif obj.__class__.__name__ == "Simple":
-		out += "TODO SIMPLE " + str(obj.op) + " " + str(obj.left) + " " + str(obj.right)
+		if obj.op is not None:
+			out += "(binOpn "
+			out += obj.op + " "
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
+			out = recursive_ast_to_string(obj.right, out, indent_level + 1)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
 	
 	elif obj.__class__.__name__ == "Term":
-		out += "TODO TERM " + str(obj.op) + " " + str(obj.left) + " " + str(obj.right)
+		if obj.op is not None:
+			out += "(binOpn "
+			out += obj.op + " "
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
+			out = recursive_ast_to_string(obj.right, out, indent_level + 1)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
+		
+	elif obj.__class__.__name__ == "Factor":
+		if obj.unop is not None:
+			out += "(unOpn "
+			out += obj.unop + " "
+			out = recursive_ast_to_string(obj.subfactor, out, indent_level + 1)
+		elif obj.literal is not None:
+			out = recursive_ast_to_string(obj.literal, out, indent_level + 1) # TODO factor rest?
+		elif obj.formals != []:
+			out += "(lambda ("
+			for formal in obj.formals:
+				out = recursive_ast_to_string(formal, out, indent_level + 1) 
+			out += ")" # TODO factor rest?
+			if obj.rtype:
+				out += "(" + obj.rtype + ")"
+			else:
+				out += "(void)"
+			out = recursive_ast_to_string(obj.block, out, indent_level + 1)
+		elif obj.factor_type is not None:
+			out += "(newObject (classApp " + obj.id + " ( "
+			throw_error("Parser error, undefined handling of newObject <factor> <<types>>")
+		elif obj.id is not None:
+			out += "(newObject " + obj.id + " ( "
+			out = recursive_ast_to_string(obj.exp, out, indent_level + 1) # TODO factor-rest?
+			out += "))"
+		else:
+			throw_error("Parser error, undefined handling of <factor>") # TODO call, aref, actuals
+			
+	
 		
 	else:
 		throw_error("Parser error while writing " + obj.__class__.__name__)
@@ -2156,9 +2215,9 @@ def is_type(token): # TODO more needed here
 	valid = False
 	valid = valid or token in PRIMTYPES
 	valid = valid or is_typeapp(token)
-	# TODO tricky to handle "int []" without some kind of lookahead function -- can also be any number of []s
-	# TODO array, can be <type> []
-	# TODO can be function ( ( <types> ) ARROW <rtype> )
+	# tricky to handle "int []" without some kind of lookahead function -- can also be any number of []s
+	# array, can be <type> []
+	# can be function ( ( <types> ) ARROW <rtype> )
 	return valid
 		
 def is_rtype(token):

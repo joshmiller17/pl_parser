@@ -1,3 +1,42 @@
+README INSTRUCTIONS:
+
+
+	Its first line must consist of your name.
+	Its second line must consist of your CCIS ID.
+	Its third line must consist of the email address you would like for us to use when reporting your grade for the project.
+	Its fourth line must specify the component you implemented, one of
+	parser
+	type checker
+	interpreter
+	translator
+	code generator
+	Its fifth line must be blank.
+	Your README file must then explain how we can use a CCIS Linux machine to convert your submitted source code into an executable version of your software that will run on a CCIS Linux machine.
+	Your README file must then explain how we can run the executable version of your software on a CCIS Linux machine. We would appreciate it if you would make the command line needed to run your component compatible with the command line needed to run the instructor's version of your component.
+	Your README file should also list any known bugs or other known issues with your software.
+	To submit your semester project:
+
+	Copy your README file and all other files you intend to submit into the CCIS shared file system.
+	On the CCIS shared file system, put your README file and all other files you intend to submit into a single directory named project. Don't put any extraneous stuff in that directory.
+	Log into a CCIS Linux machine, use the tar utility to create a project.tgz file that packages your entire project directory into a single compressed file, and submit that file using the /course/cs7400f18/submit program as shown below. When you submit that file, you will also tell us your CCIS ID. Suppose, for example, your CCIS ID is sidewinder. (It isn't, of course.) Then you would submit your program like this:
+			  $ ssh sidewinder@login.ccs.neu.edu
+			  % [cd to the directory containing your project directory]
+			  % cd project/..
+			  % tar -czf project.tgz project
+			  % /course/cs7400f18/submit sidewinder project.tgz
+			  % logout
+	(Use your own CCIS ID instead of sidewinder.)
+	If all goes well, step 3 will end by giving you a confirmation number. Please record your confirmation number so you can prove you have submitted the assignment.
+
+
+
+
+
+
+
+
+
+
 This directory contains pieces of an implementation of quirk24,
 along with a few examples and some documentation.
 

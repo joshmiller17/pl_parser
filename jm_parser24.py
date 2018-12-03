@@ -49,8 +49,6 @@ DEBUG_LEVEL = 2.5  # amount of debug output, range [0,3] in steps of 0.5 because
 
 
 
-# TODO tricky to handle "int []" without some kind of lookahead function -- can also be any number of []s
-
 class Protocol:
 
 	def __init__(self):
@@ -437,9 +435,11 @@ class Exp:
 				self.handle_factor_new()
 			else:
 				throw_error("Syntax error: expected <id> while parsing <factor>")
+		elif is_type(self.raw[self.index]):
+			throw_error("TODO factor new <id> <<types>>...")
 		elif '(' in self.raw[self.index]:
 			if '(' == self.raw[self.index]:
-				# TODO this doesn't handle recursive actuals
+				# fixme this doesn't handle recursive actuals
 				self.raw.pop(self.index)
 				new_exp_end = self.raw.index(')')
 				if new_exp_end == -1:
@@ -456,7 +456,7 @@ class Exp:
 			throw_error("Syntax error while parsing <factor>")
 					
 	def handle_actuals(self, new_exp):
-		# exp, exp, exp, exp )
+		# exp, exp, exp, exp
 		actuals = []
 		current_exp = None
 		for token in new_exp:
@@ -551,76 +551,76 @@ class Exp:
 		
 	# Given raw string of <exp>, construct the abstract representations that compose it
 	def compile(self):
-		#try:  # TODO uncomment
-		self.make_factors() # convert all pieces into factors and ops
-	
-		while self.has_op(MULOPS): # TODO assert left and right are factors
-			for i in range(len(self.raw)):
-				if self.raw[i] in MULOPS:
-					term = Term()
-					term.set_op = self.raw[i]
-					term.set_right = self.raw.pop(i+1)
-					term.set_left = self.raw[i-1]
-					self.raw[i-1] = term
-				
-		while self.has_op(ADDOPS):# TODO assert left is term and right is simple
-		# TODO convert any remaining to simple
-			for i in range(len(self.raw)):
-				if self.raw[i] in ADDOPS:
-					simple = Simple()
-					simple.set_op = self.raw[i]
-					simple.set_right = self.raw.pop(i+1)
-					simple.set_left = self.raw[i-1]
-					self.raw[i-1] = simple
+		try: 
+			self.make_factors() # convert all pieces into factors and ops
+
+			while self.has_op(MULOPS): # TODO assert left and right are factors --- use obj.__class__.__name__
+				for i in range(len(self.raw)):
+					if self.raw[i] in MULOPS:
+						term = Term()
+						term.set_op = self.raw[i]
+						term.set_right = self.raw.pop(i+1)
+						term.set_left = self.raw[i-1]
+						self.raw[i-1] = term
 					
-		while self.has_op(RELOPS):# TODO assert left and right are simples
-		# TODO convert any remaining to conjunct
-			for i in range(len(self.raw)):
-				if self.raw[i] in RELOPS:
-					conjunct = Conjunct()
-					conjunct.set_op = self.raw[i]
-					conjunct.set_right = self.raw.pop(i+1)
-					conjunct.set_left = self.raw[i-1]
-					self.raw[i-1] = conjunct
-					
-		while self.has_op(ANDOPS):# TODO assert left is conjunct and right is disjunct
-		# TODO convert any remaining to disjunct
-			for i in range(len(self.raw)):
-				if self.raw[i] in ANDOPS:
-					disjunct = Disjunct()
-					disjunct.set_op = self.raw[i]
-					disjunct.set_right = self.raw.pop(i+1)
-					disjunct.set_left = self.raw[i-1]
-					self.raw[i-1] = disjunct
-					
-		while self.has_op(OROPS):# TODO assert left is disjunct and right is lhs
-		# TODO convert any remaining to lhs
-			for i in range(len(self.raw)):
-				if self.raw[i] in OROPS:
-					lhs = LHS()
-					lhs.set_op = self.raw[i]
-					lhs.set_right = self.raw.pop(i+1)
-					lhs.set_left = self.raw[i-1]
-					self.raw[i-1] = lhs
-					
-		while self.has_op(ASSIGNOPS):# TODO assert left is lhs and right is exp
-		# TODO convert any remaining to exp
-			for i in range(len(self.raw)):
-				if self.raw[i] in ASSIGNOPS:
-					exp = Exp()
-					exp.set_op = self.raw[i]
-					exp.set_right = self.raw.pop(i+1)
-					exp.set_left = self.raw[i-1]
-					self.raw[i-1] = exp
-					
-		# TODO assert there is only one exp
-		if len(self.raw) > 1 or len(self.raw) < 1:
-			throw_error("Parser error handling <exp>", addl="expected exactly 1 <exp>, got " + str(len(self.raw)) + ": " + str(self.raw))
+			while self.has_op(ADDOPS):# TODO assert left is term and right is simple
+			# TODO convert any remaining to simple
+				for i in range(len(self.raw)):
+					if self.raw[i] in ADDOPS:
+						simple = Simple()
+						simple.set_op = self.raw[i]
+						simple.set_right = self.raw.pop(i+1)
+						simple.set_left = self.raw[i-1]
+						self.raw[i-1] = simple
 						
-		# except Exception as e:# TODO uncomment
-			# throw_error("Syntax error while parsing <exp>")
-			# if DEBUG_LEVEL > 0.5:
-				# print("DEBUG: Exception: " + str(e))
+			while self.has_op(RELOPS):# TODO assert left and right are simples
+			# TODO convert any remaining to conjunct
+				for i in range(len(self.raw)):
+					if self.raw[i] in RELOPS:
+						conjunct = Conjunct()
+						conjunct.set_op = self.raw[i]
+						conjunct.set_right = self.raw.pop(i+1)
+						conjunct.set_left = self.raw[i-1]
+						self.raw[i-1] = conjunct
+						
+			while self.has_op(ANDOPS):# TODO assert left is conjunct and right is disjunct
+			# TODO convert any remaining to disjunct
+				for i in range(len(self.raw)):
+					if self.raw[i] in ANDOPS:
+						disjunct = Disjunct()
+						disjunct.set_op = self.raw[i]
+						disjunct.set_right = self.raw.pop(i+1)
+						disjunct.set_left = self.raw[i-1]
+						self.raw[i-1] = disjunct
+						
+			while self.has_op(OROPS):# TODO assert left is disjunct and right is lhs
+			# TODO convert any remaining to lhs
+				for i in range(len(self.raw)):
+					if self.raw[i] in OROPS:
+						lhs = LHS()
+						lhs.set_op = self.raw[i]
+						lhs.set_right = self.raw.pop(i+1)
+						lhs.set_left = self.raw[i-1]
+						self.raw[i-1] = lhs
+						
+			while self.has_op(ASSIGNOPS):# TODO assert left is lhs and right is exp
+			# TODO convert any remaining to exp
+				for i in range(len(self.raw)):
+					if self.raw[i] in ASSIGNOPS:
+						exp = Exp()
+						exp.set_op = self.raw[i]
+						exp.set_right = self.raw.pop(i+1)
+						exp.set_left = self.raw[i-1]
+						self.raw[i-1] = exp
+						
+			# assert there is only one exp
+			if len(self.raw) > 1 or len(self.raw) < 1:
+				throw_error("Parser error handling <exp>", addl="expected exactly 1 <exp>, got " + str(len(self.raw)) + ": " + str(self.raw))
+							
+		except Exception as e:
+			throw_error("Syntax error while parsing <exp>")
+			if DEBUG_LEVEL > 0.5:
+				print("DEBUG: Exception: " + str(e))
 				
 	def __str__(self):
 		return recursive_ast_to_string(self, "", 0)
@@ -634,7 +634,11 @@ class Factor(): # TODO
 		self.subfactor = None
 		self.valid = False
 		self.literal = None
+		self.formals = []
 		self.actuals = []
+		self.block = None
+		self.rtype = None
+		self.exp = None
 		
 	def set_valid(self, v):
 		self.valid = v
@@ -644,6 +648,18 @@ class Factor(): # TODO
 		
 	def set_id(self, i):
 		self.id = i
+		
+	def add_exp(self, e):
+		self.exp = e
+		
+	def set_rtype(self, r):
+		self.rtype = r
+		
+	def set_block(self, b):
+		self.block = b
+		
+	def add_formal(self, f):
+		self.formals.append(f)
 		
 	def add_actual(self, a):
 		self.actuals.append(a)
@@ -760,29 +776,38 @@ def run(input, output):
 			
 
 def tokenize_line(line, repeat=False):
+	global parsing_string
 	if DEBUG_LEVEL > 0 and not illegal and not repeat:
 		print("DEBUG: INPUT (line " + str(line_count) + "): " + line[:-1])
 	current_token = ""
 	for c in line:	
 		if ord(c) in WHITESPACE:
 			if parsing_string:
-				current_token += c # TODO anything else?
+				current_token += c
 			elif current_token != "":
 				token = current_token
 				current_token = ""
 				if token.startswith("//"): # comment, skip the rest of line
 					current_token = ""
 					break
+				elif current_token.startswith("\""):
+					parsing_string = True
+				elif current_token.startswith("\"") and current_token.endswith("\"") and len(current_token) > 1:
+					add_to_ast(token)
 				else:
 					add_to_ast(token)
 			else:
 				pass # just clearing whitespace
-		elif is_valid_char(c):
-			current_token += c # TODO anything else?
+		elif is_valid_char(c) or c == "\"":
+			current_token += c
+			if current_token.startswith("\""):
+				parsing_string = True
+			if current_token.startswith("\"") and current_token.endswith("\"") and len(current_token) > 1:
+				add_to_ast(token)
 		else:
 			throw_error("Forbidden character: \'" + str(c) + "\'")
 			break
-	if current_token and not current_token.startswith("//"):
+	if current_token and not current_token.startswith("//") and not parsing_string:
 		add_to_ast(current_token)
 	
 # if current obj handling is None, pop from stack
@@ -1922,6 +1947,7 @@ def is_type(token): # TODO more needed here
 	valid = False
 	valid = valid or token in PRIMTYPES
 	valid = valid or is_typeapp(token)
+	# TODO tricky to handle "int []" without some kind of lookahead function -- can also be any number of []s
 	# TODO array, can be <type> []
 	# TODO can be function ( ( <types> ) ARROW <rtype> )
 	return valid
@@ -1998,7 +2024,7 @@ def is_floatliteral(token):
 	
 def is_stringliteral(token):
 	str = token[1:-1]
-	if not token.startswith("\"") or not token.endswith("\""):
+	if not (token.startswith("\"") and token.endswith("\"")):
 		return False
 	valid = True
 	for c in str:

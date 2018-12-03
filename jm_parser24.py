@@ -429,29 +429,42 @@ class Exp:
 	def handle_factor_new(self):
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing new")
-		if self.current_factor.id is None:
+		if self.current_factor.id is None and self.current_factor.factor_type is None:
 			if is_id(self.raw[self.index]):
 				self.current_factor.set_id(self.raw.pop(self.index))
 				self.handle_factor_new()
+			elif is_type(self.raw[self.index]):
+				self.current_factor.set_factor_type(self.raw.pop(self.index))
+				self.handle_factor_new()
 			else:
-				throw_error("Syntax error: expected <id> while parsing <factor>")
-		elif is_type(self.raw[self.index]):
-			throw_error("TODO factor new <id> <<types>>...")
+				throw_error("Syntax error: expected <id> or <type> while parsing <factor>")
+		elif self.current_factor.id is not None and is_type(self.raw[self.index]):
+			throw_error("TODO factor new <id> <<types>>...") # TODO
+		elif self.current_factor.factor_type is not None and '[' == self.raw[self.index]:
+			self.raw.pop(self.index)
+			new_exp_end = self.raw.index(']')
+			if new_exp_end == -1:
+				throw_error("Syntax error while parsing [ <exp> ] of <factor>")
+			else:
+				self.raw.pop(new_exp_end)
+				new_exp = self.raw[self.index : new_exp_end]
+				exp = self.handle_bracket_exp(new_exp)
+				self.current_factor.add_exp(e)
+				self.handle_factor_rest()
 		elif '(' in self.raw[self.index]:
-			if '(' == self.raw[self.index]:
-				# fixme this doesn't handle recursive actuals
-				self.raw.pop(self.index)
-				new_exp_end = self.raw.index(')')
-				if new_exp_end == -1:
-					throw_error("Syntax error while parsing <actuals> of <factor>")
-				else:
-					self.raw.pop(new_exp_end)
-					new_exp = self.raw[self.index : new_exp_end]
-					actuals = self.handle_actuals(new_exp)
-					if len(actuals):
-						for a in actuals:
-							self.current_factor.add_actual(a)
-					self.handle_factor_rest()
+			# fixme this doesn't handle recursive actuals
+			self.raw.pop(self.index)
+			new_exp_end = self.raw.index(')')
+			if new_exp_end == -1:
+				throw_error("Syntax error while parsing <actuals> of <factor>")
+			else:
+				self.raw.pop(new_exp_end)
+				new_exp = self.raw[self.index : new_exp_end]
+				actuals = self.handle_actuals(new_exp)
+				if len(actuals):
+					for a in actuals:
+						self.current_factor.add_actual(a)
+				self.handle_factor_rest()
 		else:
 			throw_error("Syntax error while parsing <factor>")
 					
@@ -477,38 +490,110 @@ class Exp:
 			current_exp.compile()
 			actuals.append(current_exp)
 		return actuals
-	
-	def handle_bracket_exp(self):
+		
+	def handle_factor_exp(self, new_exp, end):
 		current_exp = None
 		for token in new_exp:
-			if ']' in token:
-				if ']' is token:
-					if current_exp:
-						current_exp.compile()
-						return current_exp
-				else:
-					throw_error("Not enough whitespace while parsing end of [ <exp> ] of <factor>")
+			if end == token:
+				if current_exp:
+					current_exp.compile()
+					return current_exp
 			else:
 				if current_exp is None:
 					current_exp = Exp()
 				current_exp.raw_append(token)
-		throw_error("Reached end of [ <exp> ] without encountering closing bracket")
+		throw_error("Reached end of <exp> without encountering closing token while parsing <factor>")
+	
+	def handle_paren_exp(self, new_exp):
+		self.handle_factor_exp(new_exp, ')')
+	
+	def handle_bracket_exp(self, new_exp):
+		self.handle_factor_exp(new_exp, ']')
 		
-				
+		
+	def handle_factor_block(self, new_exp):
+		throw_error("Parser not defined for syntax <factor-block>") # TODO
+		
+	def handle_factor_formals(self, new_exp):
+		formals = []
+		current_formal = Formal()
+		for token in new_exp:
+			if current_formal.type is None:
+				if is_type(token):
+					current_formal.set_type(token)
+				else:
+					throw_error("Encountered " + str(token) + " while expecting <type> for <formal> for <factor>")
+			elif current_formal.id is None:
+				if is_id(token):
+					current_formal.set_id(token)
+				else:
+					throw_error("Encountered " + str(token) + " while expecting <id> for <formal> for <factor>")
+			if current_formal.type is not None and current_formal.id is not None:
+				formals.append(current_formal)
+				current_formal = Formal()
+		return formals
+			
 	def handle_factor_lam(self):
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing lambda")
-		throw_error("Parser not defined for syntax <factor-lam>") # TODO
+		if '(' == self.raw[self.index]: # assume whitespace added
+			# formals
+			self.raw.pop(self.index)
+			new_exp_end = self.raw.index(')')
+			if new_exp_end == -1:
+				throw_error("Syntax error while parsing <formals> of <factor>")
+			else:
+				self.raw.pop(new_exp_end)
+				new_exp = self.raw[self.index : new_exp_end]
+				formals = self.handle_factor_formals(new_exp)
+				if len(formals):
+					for f in formals:
+						self.current_factor.add_formal(a)
+		elif ':' == self.raw[self.index]:
+			self.raw.pop(self.index)
+			ret = self.raw.pop(self.index)
+			if not is_rtype(ret):
+				throw_error("Invalid <rtype> while parsing <factor>: " + str(ret))
+			else:
+				self.set_rtype(ret)
+		elif '{' == self.raw[self.index]:
+			# block
+			self.raw.pop(self.index)
+			block_end = self.raw.index('}')
+			if block_end == -1:
+				throw_error("Syntax error while parsing <block> of <factor>")
+			else:
+				self.raw.pop(block_end)
+				block_exp = self.raw[self.index : block_end]
+				block = self.handle_factor_block(block_exp)
+				self.current_factor.add_block(block)
+			self.handle_factor_rest()
+		else:
+			throw_error("Syntax error while parsing <factor>")
 		
 	def handle_factor_exp(self):
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing <exp>")
-		throw_error("Parser not defined for syntax <factor-exp>") # TODO
+		# assume ( popped, exp next
+		new_exp_end = self.raw.index(')')
+		if new_exp_end == -1:
+			throw_error("Syntax error while parsing <exp> of <factor>")
+		else:
+			self.raw.pop(new_exp_end)
+			new_exp = self.raw[self.index : new_exp_end]
+			exp = self.handle_paren_exp(new_exp)
+			self.current_factor.add_exp(exp)
+			self.handle_factor_rest()
 		
 	def handle_factor_id(self):
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing <id>")
-		throw_error("Parser not defined for syntax <factor-id>") # TODO
+		token = self.raw.pop(self.index)
+		if not is_id(token):
+			throw_error("Encountered " + str(token) + " while expecting an <id> for <factor>")
+		else:
+			self.current_factor.set_id(token)
+			self.handle_factor_rest()
 		
 	def handle_factor_rest(self):
 		if not self.current_factor:
@@ -530,16 +615,27 @@ class Exp:
 					else:
 						if s == '(':
 							handled = True
-							throw_error("TODO expect ( <actuals> ) <factor-rest>")
-							pass # TODO expect ( <actuals> ) <factor-rest>
+							# fixme this doesn't handle recursive actuals
+							self.raw.pop(self.index)
+							new_exp_end = self.raw.index(')')
+							if new_exp_end == -1:
+								throw_error("Syntax error while parsing <actuals> of <factor>")
+							else:
+								self.raw.pop(new_exp_end)
+								new_exp = self.raw[self.index : new_exp_end]
+								actuals = self.handle_actuals(new_exp)
+								if len(actuals):
+									for a in actuals:
+										self.current_factor.add_actual(a)
+								self.handle_factor_rest()
 						elif s == '.':
 							handled = True
-							throw_error("TODO expect <id> <factor-rest>")
-							pass # TODO expect . <id> <factor-rest>
+							self.raw.pop(self.index)
+							self.handle_factor_id()
 						elif s == '[':
 							handled = True
-							throw_error("TODO expect [ <exp> ] <factor-rest>")
-							pass # TODO expect [ <exp> ] <factor-rest>
+							self.raw.pop(self.index)
+							self.handle_factor_exp()
 						else:
 							throw_error("Syntax error while parsing <factor-rest>")
 		
@@ -548,69 +644,115 @@ class Exp:
 			self.current_factor.set_valid(True)
 			self.raw.insert(self.index, self.current_factor)
 		
+	def assert_class(token, class_name):
+		t = token.__class__.__name__
+		if t != class_name:
+			throw_error("Syntax error while parsing <factor>", addl="Expected " + t + " to be " + class_name)
 		
 	# Given raw string of <exp>, construct the abstract representations that compose it
 	def compile(self):
 		try: 
 			self.make_factors() # convert all pieces into factors and ops
 
-			while self.has_op(MULOPS): # TODO assert left and right are factors --- use obj.__class__.__name__
+			while self.has_op(MULOPS):
 				for i in range(len(self.raw)):
 					if self.raw[i] in MULOPS:
 						term = Term()
 						term.set_op = self.raw[i]
 						term.set_right = self.raw.pop(i+1)
+						assert_class(term.right, "Factor")
 						term.set_left = self.raw[i-1]
+						assert_class(term.left, "Factor")
 						self.raw[i-1] = term
 					
-			while self.has_op(ADDOPS):# TODO assert left is term and right is simple
-			# TODO convert any remaining to simple
+			while self.has_op(ADDOPS):
+				# Convert remaining Factors into Simples
+				for i in range(len(self.raw)):
+					if self.raw[i].__class__.__name__ == "Factor":
+						old = self.raw.pop(i)
+						new = Simple()
+						new.set_left(old)
+						self.raw.insert(i, new)
 				for i in range(len(self.raw)):
 					if self.raw[i] in ADDOPS:
 						simple = Simple()
 						simple.set_op = self.raw[i]
 						simple.set_right = self.raw.pop(i+1)
+						assert_class(term.right, "Simple")
 						simple.set_left = self.raw[i-1]
+						assert_class(term.left, "Simple")
 						self.raw[i-1] = simple
 						
-			while self.has_op(RELOPS):# TODO assert left and right are simples
-			# TODO convert any remaining to conjunct
+			while self.has_op(RELOPS):
+				# Convert remaining Simples into Conjuncts
+				for i in range(len(self.raw)):
+					if self.raw[i].__class__.__name__ == "Simple":
+						old = self.raw.pop(i)
+						new = Conjunct()
+						new.set_left(old)
+						self.raw.insert(i, new)
 				for i in range(len(self.raw)):
 					if self.raw[i] in RELOPS:
 						conjunct = Conjunct()
 						conjunct.set_op = self.raw[i]
 						conjunct.set_right = self.raw.pop(i+1)
+						assert_class(term.right, "Conjunct")
 						conjunct.set_left = self.raw[i-1]
+						assert_class(term.left, "Conjunct")
 						self.raw[i-1] = conjunct
 						
-			while self.has_op(ANDOPS):# TODO assert left is conjunct and right is disjunct
-			# TODO convert any remaining to disjunct
+			while self.has_op(ANDOPS):
+				# Convert remaining Conjuncts into Disjuncts
+				for i in range(len(self.raw)):
+					if self.raw[i].__class__.__name__ == "Conjunct":
+						old = self.raw.pop(i)
+						new = Disjunct()
+						new.set_left(old)
+						self.raw.insert(i, new)
 				for i in range(len(self.raw)):
 					if self.raw[i] in ANDOPS:
 						disjunct = Disjunct()
 						disjunct.set_op = self.raw[i]
 						disjunct.set_right = self.raw.pop(i+1)
+						assert_class(term.right, "Disjunct")
 						disjunct.set_left = self.raw[i-1]
+						assert_class(term.left, "Disjunct")
 						self.raw[i-1] = disjunct
 						
-			while self.has_op(OROPS):# TODO assert left is disjunct and right is lhs
-			# TODO convert any remaining to lhs
+			while self.has_op(OROPS):
+				# Convert remaining Disjuncts into LHSs
+				for i in range(len(self.raw)):
+					if self.raw[i].__class__.__name__ == "Disjunct":
+						old = self.raw.pop(i)
+						new = LHS()
+						new.set_left(old)
+						self.raw.insert(i, new)
 				for i in range(len(self.raw)):
 					if self.raw[i] in OROPS:
 						lhs = LHS()
 						lhs.set_op = self.raw[i]
 						lhs.set_right = self.raw.pop(i+1)
+						assert_class(term.right, "LHS")
 						lhs.set_left = self.raw[i-1]
+						assert_class(term.left, "LHS")
 						self.raw[i-1] = lhs
 						
-			while self.has_op(ASSIGNOPS):# TODO assert left is lhs and right is exp
-			# TODO convert any remaining to exp
+			while self.has_op(ASSIGNOPS):
+				# Convert remaining LHS into Exp
+				for i in range(len(self.raw)):
+					if self.raw[i].__class__.__name__ == "LHS":
+						old = self.raw.pop(i)
+						new = Exp()
+						new.set_left(old)
+						self.raw.insert(i, new)
 				for i in range(len(self.raw)):
 					if self.raw[i] in ASSIGNOPS:
 						exp = Exp()
 						exp.set_op = self.raw[i]
 						exp.set_right = self.raw.pop(i+1)
+						assert_class(term.right, "Exp")
 						exp.set_left = self.raw[i-1]
+						assert_class(term.left, "Exp")
 						self.raw[i-1] = exp
 						
 			# assert there is only one exp
@@ -625,7 +767,7 @@ class Exp:
 	def __str__(self):
 		return recursive_ast_to_string(self, "", 0)
 
-class Factor(): # TODO
+class Factor():
 
 	def __init__(self):
 		self.type = "Factor"
@@ -639,9 +781,14 @@ class Factor(): # TODO
 		self.block = None
 		self.rtype = None
 		self.exp = None
+		self.types = None
+		self.factor_type = None
 		
 	def set_valid(self, v):
 		self.valid = v
+		
+	def set_factor_type(self, t):
+		self.factor_type = t
 		
 	def set_unop(self, u):
 		self.unop = u
@@ -1681,7 +1828,7 @@ def handle_exp(token, end):
 		current_obj_type = "Exp"
 	
 	if len(token) > 1:
-		for c in ['(',')', '[', ']']:
+		for c in ['(',')', '[', ']', ',']:
 			if c in token:
 				read_tight_code(token)
 				return
@@ -1827,7 +1974,8 @@ def handle_stm(token):
 				expecting[0] = STM_REDIRECTS[key]
 				if key == "{" and current_obj.independent:
 					expecting.insert(1, "<stm-finish>")
-				if key != "return": # consume return
+				consume_tokens = ["return", "if", "while", "for", "halt"]
+				if key not in consume_tokens:
 					add_to_ast(token) # return to handler
 			else:
 				read_tight_code(token)
@@ -1852,24 +2000,69 @@ def handle_stm_empty(token):
 		stm_obj = current_obj
 		pop_stack()
 		current_obj.add_stm(stm_obj)
+		
+def handle_stm_finally(token):
+	# fixme error if this is the last part of the program?
+	# add stm to its parent object
+	if not current_obj.independent:
+		stm_obj = current_obj
+		pop_stack()
+		current_obj.add_stm(stm_obj)
+		add_to_ast(token)
 
 def handle_stm_if(token):
 	global expecting
 	global current_obj
 	global current_obj_type
-	throw_error("Parser not defined for syntax <stm-if>") # TODO
+	# if has been consumed
+	if '(' in token and expecting[0] == "<stm-if>":
+		if '(' == token:
+			current_obj.set_style("if")
+			expecting[0] = "<stm-then>"
+			expecting.insert(0, "<exp-paren>")
+		else:
+			read_tight_code(token)
+	elif expecting[0] == "<stm-then>":
+		expecting.insert(0, "<stm>")
+		add_to_ast(token)
+	elif expecting[0] == "<stm-else>" and token == "else":
+		expecting[0] = "<stm-finally>"
+		expecting.insert(0, "<stm>")
+	else:
+		throw_error("Syntax error parsing <stm-if>")
 
 def handle_stm_while(token):
 	global expecting
 	global current_obj
 	global current_obj_type
-	throw_error("Parser not defined for syntax <stm-while>") # TODO
+	# while has been consumed
+	if '(' in token and expecting[0] == "<stm-while>":
+		if '(' == token:
+			current_obj.set_style("while")
+			expecting[0] = "<exp-paren>"
+			expecting.insert(0, "<stm-finally>")
+		else:
+			read_tight_code(token)
+	else:
+		throw_error("Syntax error parsing <stm-while>")
 	
 def handle_stm_for(token):
 	global expecting
 	global current_obj
 	global current_obj_type
-	throw_error("Parser not defined for syntax <stm-for>") # TODO
+	throw_error("Parser not defined for syntax <stm-for>")
+	# for has been consumed
+	if '(' in token and expecting[0] == "<stm-for>":
+		if '(' == token:
+			current_obj.set_style("for")
+			expecting[0] = "<stm-finally>"
+			expecting.insert(0, "<exp-paren>")
+			expecting.insert(0, "<exp-semi>")
+			expecting.insert(0, "<vardec>")
+		else:
+			read_tight_code(token)
+	else:
+		throw_error("Syntax error parsing <stm-for>")
 	
 def handle_stm_exp(token):
 	global expecting
@@ -1910,7 +2103,28 @@ def handle_stm_return(token):
 		current_obj.add_stm(stm_obj)
 
 def handle_stm_halt(token):
-	throw_error("Parser not defined for syntax <stm-halt>") # TODO
+	# halt has been consumed
+	if '(' in token:
+		if '(' == token:
+			if expecting[0] == "<stm-halt>":
+				current_obj.set_style("halt")
+				expecting[0] = "<stm-halt-rest>"
+				expecting.insert(0, "<exp-paren>")
+			else:
+				throw_error("Syntax error parsing <stm-halt>")
+		else:
+			read_tight_code(token)
+	elif expecting[0] == "<stm-halt-rest>" and token == ';':
+		expecting = expecting[1:]
+		# add stm to its parent object
+		if not current_obj.independent:
+			stm_obj = current_obj
+			pop_stack()
+			current_obj.add_stm(stm_obj)
+			add_to_ast(token)
+	else:
+		throw_error("Syntax error parsing <stm-halt>")
+			
 		
 # push current object to stack
 def push_stack():
@@ -1946,7 +2160,7 @@ def is_type(token): # TODO more needed here
 	# TODO array, can be <type> []
 	# TODO can be function ( ( <types> ) ARROW <rtype> )
 	return valid
-	
+		
 def is_rtype(token):
 	return token is "void" or is_type(token)
 		
@@ -2079,10 +2293,13 @@ TOKEN_TO_HANDLER = {
 "<stm>" : handle_stm,
 "<stm-empty>" : handle_stm_empty,
 "<stm-if>" : handle_stm_if,
+"<stm-then>" : handle_stm_if,
 "<stm-while>" : handle_stm_while,
 "<stm-for>" : handle_stm_for,
+"<stm-finally>" : handle_stm_finally,
 "<stm-ret>" : handle_stm_return,
 "<stm-halt>" : handle_stm_halt,
+"<stm-halt-rest>" : handle_stm_halt,
 "<stm-exp>" : handle_stm_exp,
 "<stm-exp-rest>" : handle_stm_exp,
 "<stm-finish>" : handle_stm_finish,

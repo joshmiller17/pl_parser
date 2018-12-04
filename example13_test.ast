@@ -1,0 +1,7 @@
+(program
+(  (protoDec
+p
+()
+()
+()))(  (classDec c ( )((typeApp p ))(init () 
+    (block ( ) ()))()))(  ((skip)))

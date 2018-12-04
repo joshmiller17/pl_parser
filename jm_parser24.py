@@ -238,6 +238,21 @@ class Stm:
 	def __str__(self):
 		return recursive_ast_to_string(self, "", 0)
 		
+class Types:
+	def __init__(self):
+		self.types = []
+		
+	def __repr__(self):
+		s = ""
+		for t in types:
+			s += t + ","
+		return s[:-1]
+	
+	def __str__(self):
+		s = ""
+		for t in types:
+			s += t + ","
+		return s[:-1]
 		
 class Dec:
 
@@ -921,7 +936,7 @@ def run(input, output):
 		print("\nEncountered syntax error while parsing " + str(input) + ":")
 		print(error_msg)
 			
-
+			
 def tokenize_line(line, repeat=False):
 	global parsing_string
 	if DEBUG_LEVEL > 0 and not illegal and not repeat:
@@ -1026,14 +1041,14 @@ def assert_obj_type(t):
 	
 def setup_ast_to_string(protocols, classes, stms):
 	out = ""
-	out += "(program\n("
+	out += "(program ("
 	indent = 1	
 	for p in protocols:
 		out = recursive_ast_to_string(p, out, indent, suppress_nl=True)
-	out += ")("
+	out += ") ("
 	for c in classes:
 		out = recursive_ast_to_string(c, out, indent, suppress_nl=True)
-	out += ")("
+	out += ") ("
 	for s in stms:
 		out = recursive_ast_to_string(s, out, indent, suppress_nl=True)
 	out += ")"
@@ -1165,8 +1180,9 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 			else:
 				out += "(return0)"
 		elif obj.style == "block":
-			out += "("
-			out = recursive_ast_to_string(obj.block, out, indent_level + 1)
+			out = out[:-1] # skip extra set of parens
+			out = recursive_ast_to_string(obj.block, out, indent_level + 1, suppress_nl=True)
+			out = out[:-1] # skip extra set of parens
 		elif obj.style == "halt":
 			if len(obj.exps) != 1:
 				throw_error("Parser error: expected <haltStm> to have exactly 1 <exp>")
@@ -1448,6 +1464,10 @@ def handle_classdecs(token):
 	elif '}' == token:
 		expecting = expecting[1:] # rest of classdecs is empty
 		pop_stack()
+	else:
+		expecting = expecting[1:] # rest of classdecs is empty
+		add_to_ast(token)
+
 		
 def handle_classdec(token):
 	global expecting
@@ -2047,6 +2067,7 @@ def handle_stm(token):
 			if key == token:
 				expecting[0] = STM_REDIRECTS[key]
 				if key == "{" and current_obj.independent:
+					current_obj.set_style("block")
 					expecting.insert(1, "<stm-finish>")
 				consume_tokens = ["return", "if", "while", "for", "halt"]
 				if key not in consume_tokens:
@@ -2225,15 +2246,6 @@ def pop_stack():
 	else:
 		current_obj = None
 		current_obj_type = None
-
-def is_type(token): # TODO more needed here
-	valid = False
-	valid = valid or token in PRIMTYPES
-	valid = valid or is_typeapp(token)
-	# tricky to handle "int []" without some kind of lookahead function -- can also be any number of []s
-	# array, can be <type> []
-	# can be function ( ( <types> ) ARROW <rtype> )
-	return valid
 		
 def is_rtype(token):
 	return token is "void" or is_type(token)
@@ -2336,8 +2348,18 @@ def add_typeid(token):
 def is_typeid(token):
 	return token in typeids
 	
-def is_typeapp(token): # TODO, can also be <typeid> < <types> >
+def is_typeapp(token):
+	# TODO, can also be <typeid> < <types> >
+	# <<types>> = any number of <type> , <type> , ...
 	return is_typeid(token) or is_tvar(token)
+	
+def is_type(token):
+	valid = False
+	valid = valid or token in PRIMTYPES
+	valid = valid or is_typeapp(token)
+	# array, can be <type> []
+	# can be function ( ( <types> ) ARROW <rtype> )
+	return valid
 
 
 TOKEN_TO_HANDLER = { 

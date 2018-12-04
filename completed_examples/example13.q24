@@ -1,0 +1,8 @@
+protocol p {
+}
+
+class c implements p {
+    () { }
+}
+
+;

@@ -19,18 +19,20 @@ def run(f1, f2):
 			s2 += ("".join(line.strip()))
 			line = f.readline()
 			
-	for i in range(len(s1)):
-		while s1[i] in WHITESPACE or s1[i].isspace():
-			s1 = s1[:i] + s1[i+1:]
-		while s2[i] in WHITESPACE or s2[i].isspace():
-			s2 = s2[:i] + s2[i+1:]
-		if s1[i] == s2[i]:
-			continue
-		else:
-			print("<" + s1[i:])
-			print(">" + s2[i:])
-			exit(0)
-
+	try:
+		for i in range(len(s1)):
+			while s1[i] in WHITESPACE or s1[i].isspace():
+				s1 = s1[:i] + s1[i+1:]
+			while s2[i] in WHITESPACE or s2[i].isspace():
+				s2 = s2[:i] + s2[i+1:]
+			if s1[i] == s2[i]:
+				continue
+			else:
+				print("<" + s1[i:])
+				print(">" + s2[i:])
+				exit(0)
+	except IndexError as e:
+		print("Good!")
 		
 def main():
 	import argparse

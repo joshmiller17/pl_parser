@@ -48,6 +48,10 @@ object_type_stack = ["None"]
 DEBUG_LEVEL = 2.5  # amount of debug output, range [0,3] in steps of 0.5 because debugging is messy
 
 
+############################
+######## CLASS DEFS ########
+############################
+
 
 class Protocol:
 
@@ -237,6 +241,22 @@ class Stm:
 		
 	def __str__(self):
 		return recursive_ast_to_string(self, "", 0)
+		
+
+class Typeapp:
+	def __init__(self):
+		self.types = None
+		self.tvar = None
+		self.typeid = None
+		
+	def add_tvar(self, t):
+		self.tvar = t
+		
+	def add_typeid(self, t):
+		self.typeid = None
+		
+	def set_types(self, t):
+		self.types = t
 		
 class Types:
 	def __init__(self):
@@ -886,30 +906,11 @@ class Term(ExpPiece):
 		self.type = "Term"
 		
 
-def stacktrace():
-	if DEBUG_LEVEL > 0.5:
-		print("\nDEBUG: Error traceback:")
-		for l in traceback.extract_stack()[1:-1]:
-			print("------ " + str(l))
-		print("Expecting: " + str(expecting))
-		print("Current object type: " + str(current_obj_type))
-		print("Current object: " + str(current_obj))
+############################
+######### MAIN #############
+############################
 		
-def throw_error(reason, addl=""):
-	global line_count
-	global illegal
-	global error_msg
-	if illegal and error_msg: # already have an error
-		return
-	illegal = True
-	error_line = line_count
-	error_msg = reason + " in line " + str(error_line)
-	if addl:
-		error_msg += "\n" + addl
-	stacktrace()
 
-
-	
 	
 def run(input, output):
 	import os
@@ -972,72 +973,16 @@ def tokenize_line(line, repeat=False):
 	if current_token and not current_token.startswith("//") and not parsing_string:
 		add_to_ast(current_token)
 	
-# if current obj handling is None, pop from stack
-def check_current_obj():
-	global current_obj
-	global current_obj_type
-	global object_stack
-	global object_stack_type
-	if current_obj == None:
-		if len(object_stack) > 0:
-			if object_stack[0] != None:
-				# pop object stack
-				current_obj = object_stack[0]
-				current_obj_type = object_type_stack[0]
-				object_stack = object_stack[1:]
-				object_stack_type = object_stack_type[1:]
-				if DEBUG_LEVEL > 0:
-					print("Object stack popped. Current obj = " + current_obj_type)
-					print("Remaining obj stack = " + str(object_stack_type))
-	
-# Find the handler to the token, a handler handler
-def add_to_ast(token):
-	global expecting
-	if illegal:
-		return
-	if DEBUG_LEVEL > 1:
-		print("DEBUG: Tokenizing <" + token + "> while expecting " + expecting[0])
-		if DEBUG_LEVEL > 2:
-			print("DEBUG: Expecting: " + str(expecting))
-	
-	check_current_obj()
-	
-	if expecting[0] == "<end>":
-		throw_error("Encountered token <" + token + "> while expecting end of program")
 
-	try:
-		handler = TOKEN_TO_HANDLER[expecting[0]]	
-		if DEBUG_LEVEL > 1:
-			print("DEBUG: Token <" + token + "> sent to " + str(handler))	
-		handler(token)
-	except KeyError as e:
-		print("\nParser error: No handler for token " + token + " while expecting " + expecting[0])
-		stacktrace()
-		exit(1)
+	
+############################
+####### PRINT TO AST #######
+############################
+	
+	
+def ast_to_string():
+	return setup_ast_to_string(protocols, classes, stms) + "\n"
 
-# handle tokens that have less whitespace than we hope for, such as (int) or :void
-# puts space between all special characters
-def read_tight_code(token, internal=False):
-	tight_tokens = ['(', ')', '{', '}', ',', ':', ';']
-	new_line = token
-	for t in tight_tokens:
-		new_line = new_line.replace(t, " " + t + " ")
-	if DEBUG_LEVEL > 1:
-		print("DEBUG: \'" + token + "\' loosened to \'" + new_line + "\'")
-	if not internal:
-		tokenize_line(new_line, repeat=True)
-	else:
-		return(new_line.split())
-		
-	
-def assert_obj_type(t):
-	#global current_obj_type
-	if t == current_obj_type:
-		return True
-	else:
-		throw_error("Parser Error: Encountered a " + t + " while expecting object of type " + str(current_obj_type))
-		return False
-	
 	
 def setup_ast_to_string(protocols, classes, stms):
 	out = ""
@@ -1048,13 +993,13 @@ def setup_ast_to_string(protocols, classes, stms):
 	out += ") ("
 	for c in classes:
 		out = recursive_ast_to_string(c, out, indent, suppress_nl=True)
-	out += ") ("
+	out += ")"
 	for s in stms:
 		out = recursive_ast_to_string(s, out, indent, suppress_nl=True)
 	out += ")"
 	return out
 	
-	
+
 def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 	if DEBUG_LEVEL > 1:
 		print("DEBUG: PRINTING AST FOR " + obj.__class__.__name__)
@@ -1078,15 +1023,15 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 			else:
 				out = recursive_ast_to_string(fp, out, indent_level + 1)
 		out += ")"
-
 		
 	elif obj.__class__.__name__ == "Class":
 		out += "classDec " + str(obj.id) + " ( "
 		for tvar in obj.typevars:
 			out += str(tvar) + " "
 		out += ")("
+		out += "(typeApp "
 		for typeapp in obj.implements:
-			out += "(typeApp " + str(typeapp) + " "
+			out += str(typeapp) + "()" #fixme () should include <<types>>, as in typeapp ::= typeid <<types>>
 		out += "))(init ("
 		for formal in obj.init_formals:
 			out = recursive_ast_to_string(formal, out, indent_level + 1)
@@ -1139,8 +1084,9 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 		out += ")"
 		
 	elif obj.__class__.__name__ == "Stm":
+		#out = out[:-1] # remove an extra paren
 		if obj.style == "empty":
-			out += "(skip)"
+			out += "skip"
 		elif obj.style == "exp":
 			if len(obj.exps) != 1:
 				throw_error("Parser error: expected <expStm> to have exactly 1 <exp>, has " + str(len(obj.exps)))
@@ -1303,10 +1249,132 @@ def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
 	if DEBUG_LEVEL > 1:
 		print(out)
 	return out
-	
-def ast_to_string():
-	return setup_ast_to_string(protocols, classes, stms) + "\n"
 
+
+############################
+#### GENERAL HELPERS #######
+############################
+		
+def stacktrace():
+	if DEBUG_LEVEL > 0.5:
+		print("\nDEBUG: Error traceback:")
+		for l in traceback.extract_stack()[1:-1]:
+			print("------ " + str(l))
+		print("Expecting: " + str(expecting))
+		print("Current object type: " + str(current_obj_type))
+		print("Current object: " + str(current_obj))
+		
+def throw_error(reason, addl=""):
+	global line_count
+	global illegal
+	global error_msg
+	if illegal and error_msg: # already have an error
+		return
+	illegal = True
+	error_line = line_count
+	error_msg = reason + " in line " + str(error_line)
+	if addl:
+		error_msg += "\n" + addl
+	stacktrace()
+
+# if current obj handling is None, pop from stack
+def check_current_obj():
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_stack_type
+	if current_obj == None:
+		if len(object_stack) > 0:
+			if object_stack[0] != None:
+				# pop object stack
+				current_obj = object_stack[0]
+				current_obj_type = object_type_stack[0]
+				object_stack = object_stack[1:]
+				object_stack_type = object_stack_type[1:]
+				if DEBUG_LEVEL > 0:
+					print("Object stack popped. Current obj = " + current_obj_type)
+					print("Remaining obj stack = " + str(object_stack_type))
+	
+# Find the handler to the token, a handler handler
+def add_to_ast(token):
+	global expecting
+	if illegal:
+		return
+	if DEBUG_LEVEL > 1:
+		print("DEBUG: Tokenizing <" + token + "> while expecting " + expecting[0])
+		if DEBUG_LEVEL > 2:
+			print("DEBUG: Expecting: " + str(expecting))
+	
+	check_current_obj()
+	
+	if expecting[0] == "<end>":
+		throw_error("Encountered token <" + token + "> while expecting end of program")
+
+	try:
+		handler = TOKEN_TO_HANDLER[expecting[0]]	
+		if DEBUG_LEVEL > 1:
+			print("DEBUG: Token <" + token + "> sent to " + str(handler))	
+		handler(token)
+	except KeyError as e:
+		print("\nParser error: No handler for token " + token + " while expecting " + expecting[0])
+		stacktrace()
+		exit(1)
+
+# handle tokens that have less whitespace than we hope for, such as (int) or :void
+# puts space between all special characters
+def read_tight_code(token, internal=False):
+	tight_tokens = ['(', ')', '{', '}', ',', ':', ';']
+	new_line = token
+	for t in tight_tokens:
+		new_line = new_line.replace(t, " " + t + " ")
+	if DEBUG_LEVEL > 1:
+		print("DEBUG: \'" + token + "\' loosened to \'" + new_line + "\'")
+	if not internal:
+		tokenize_line(new_line, repeat=True)
+	else:
+		return(new_line.split())
+		
+	
+def assert_obj_type(t):
+	#global current_obj_type
+	if t == current_obj_type:
+		return True
+	else:
+		throw_error("Parser Error: Encountered a " + t + " while expecting object of type " + str(current_obj_type))
+		return False
+	
+		
+# push current object to stack
+def push_stack():
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_stack_type
+	object_stack.insert(0, current_obj)
+	object_type_stack.insert(0, current_obj_type)
+	current_obj = None
+	current_obj_type = None
+	
+# pop object from stack to current
+def pop_stack():
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_type_stack
+	if len(object_stack) > 0:
+		current_obj = object_stack[0]
+		current_obj_type = object_type_stack[0]
+		object_stack = object_stack[1:]
+		object_type_stack = object_type_stack[1:]
+	else:
+		current_obj = None
+		current_obj_type = None
+		
+	
+############################
+### TOKEN HANDLERS #########
+############################
+	
 		
 def handle_protodecs(token):
 	global expecting
@@ -2220,33 +2288,11 @@ def handle_stm_halt(token):
 	else:
 		throw_error("Syntax error parsing <stm-halt>")
 			
-		
-# push current object to stack
-def push_stack():
-	global current_obj
-	global current_obj_type
-	global object_stack
-	global object_stack_type
-	object_stack.insert(0, current_obj)
-	object_type_stack.insert(0, current_obj_type)
-	current_obj = None
-	current_obj_type = None
-	
-# pop object from stack to current
-def pop_stack():
-	global current_obj
-	global current_obj_type
-	global object_stack
-	global object_type_stack
-	if len(object_stack) > 0:
-		current_obj = object_stack[0]
-		current_obj_type = object_type_stack[0]
-		object_stack = object_stack[1:]
-		object_type_stack = object_type_stack[1:]
-	else:
-		current_obj = None
-		current_obj_type = None
-		
+			
+############################
+### VALIDITY CHECKERS ######
+############################
+
 def is_rtype(token):
 	return token is "void" or is_type(token)
 		

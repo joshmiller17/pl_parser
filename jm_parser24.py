@@ -2473,6 +2473,7 @@ def handle_stm_if(token):
 		else:
 			read_tight_code(token)
 	elif expecting[0] == "<stm-then>":
+		expecting[0] = "<stm-else>"
 		expecting.insert(0, "<stm>")
 		add_to_ast(token)
 	elif expecting[0] == "<stm-else>" and token == "else":
@@ -2726,6 +2727,7 @@ TOKEN_TO_HANDLER = {
 "<stm-empty>" : handle_stm_empty,
 "<stm-if>" : handle_stm_if,
 "<stm-then>" : handle_stm_if,
+"<stm-else>" : handle_stm_if,
 "<stm-while>" : handle_stm_while,
 "<stm-for>" : handle_stm_for,
 "<stm-finally>" : handle_stm_finally,

@@ -2414,6 +2414,10 @@ def handle_stm(token):
 		current_obj_type = "Stm"
 		current_obj.independent = True
 		stms.append(current_obj)
+	elif current_obj_type != "Stm":
+		push_stack()
+		current_obj = Stm()
+		current_obj_type = "Stm"
 	assert_obj_type("Stm")
 	handled = False
 	for key in STM_REDIRECTS.keys():
@@ -2549,8 +2553,10 @@ def handle_stm_return(token):
 		expecting[0] = "<exp-semi>"
 		add_to_ast(token)
 	
+	# TODO not always stm?
+	
 	# add stm to its parent object
-	if not current_obj.independent:
+	if current_obj_type == "Stm" and not current_obj.independent:
 		stm_obj = current_obj
 		pop_stack()
 		current_obj.add_stm(stm_obj)

@@ -51,6 +51,8 @@ current_obj = None
 current_obj_type = None
 object_stack = [None]
 object_type_stack = ["None"]
+current_token = ""
+temp_token = ""
 DEBUG_LEVEL = 2.5  # amount of debug output, range [0,3] in steps of 0.5 because debugging is messy
 
 
@@ -463,7 +465,7 @@ class Exp:
 			self.new_factor()
 			self.handle_factor_lit()
 		else:
-			throw_error("Syntax error while parsing <factor>")
+			throw_error("Syntax error while parsing <factor>", addl="Token <" + token + "> confused the parser")
 	
 	def handle_factor_unop(self):
 		if DEBUG_LEVEL > 1.5:
@@ -1058,11 +1060,17 @@ def run(input, output):
 			print(ast_to_string())
 			
 			
+# convert line into tokens
+# some trickery involved for strings that span multiple lines
+# repeat parameter used if we need to re-tokenize
 def tokenize_line(line, repeat=False):
 	global parsing_string
+	global current_token
 	if DEBUG_LEVEL > 0 and not illegal and not repeat:
 		print("DEBUG: INPUT (line " + str(line_count) + "): " + line[:-1])
-	current_token = ""
+	if repeat: # if re-tokenizing, stash current token
+		temp_token = current_token
+		current_token = ""
 	for c in line:	
 		if c == "\"" and current_token != "":
 			# " marks start or end of token
@@ -1078,9 +1086,14 @@ def tokenize_line(line, repeat=False):
 				parsing_string = False
 		elif ord(c) in WHITESPACE:
 			if parsing_string:
+				# write whitespace token as backslash escape readable char
+				if ord(c) == 0xa:
+					throw_error("Forbidden character: '\\n' in <stringliteral>")
+				elif ord(c) == 0xd:
+					throw_error("Forbidden character: '\\r' in <stringliteral>")
 				current_token += c
 			elif current_token != "":
-				# WRAP UP AND SEND TOKEN
+				# wrap up and send token
 				token = current_token
 				current_token = ""
 				if token.startswith("//"): # comment, skip the rest of line
@@ -1090,8 +1103,11 @@ def tokenize_line(line, repeat=False):
 					parsing_string = True
 				elif token.startswith("\"") and token.endswith("\"") and len(token) > 1: #deprecated?
 					add_to_ast(token)
+					current_token = ""
+					parsing_string = False
 				else:
 					add_to_ast(token)
+					current_token = ""
 			else:
 				pass # just clearing whitespace
 		elif is_valid_char(c) or c == "\"":
@@ -1100,11 +1116,18 @@ def tokenize_line(line, repeat=False):
 				parsing_string = True
 			if current_token.startswith("\"") and current_token.endswith("\"") and len(current_token) > 1:  #deprecated?
 				add_to_ast(current_token)
+				current_token = ""
+				parsing_string = False
 		else:
 			throw_error("Forbidden character: \'" + str(c) + "\'")
 			break
 	if current_token and not current_token.startswith("//") and not parsing_string:
 		add_to_ast(current_token)
+		current_token = ""
+	if current_token.startswith("//"): # end of comment line
+		current_token = ""
+	if repeat:
+		current_token = temp_token
 	
 
 	
@@ -1132,7 +1155,7 @@ def setup_ast_to_string(protocols, classes, stms):
 	for s in stms:
 		out = recursive_ast_to_string(s, out, indent)
 	out += ")"
-	if DEBUG_LEVEL > 0.5:
+	if DEBUG_LEVEL > 0.5 and not illegal:
 		print("DEBUG: OUTPUT: ")
 		print(out)
 	return out
@@ -1141,8 +1164,8 @@ def setup_ast_to_string(protocols, classes, stms):
 # recursively parse an object, adding to out str which gets returned
 # continuation parameter used to supress newline + indentation + (
 def recursive_ast_to_string(obj, out, indent_level, continuation=False):
-	if DEBUG_LEVEL > 2.5:
-		print("DEBUG: PRINTING AST FOR " + obj.__class__.__name__)
+	if DEBUG_LEVEL > 2:
+		print("DEBUG: " + " " * indent_level + " PRINTING " + obj.__class__.__name__)
 	
 	if not continuation:
 		out += "\n" + INDENTATION * indent_level + "("
@@ -1405,6 +1428,10 @@ def recursive_ast_to_string(obj, out, indent_level, continuation=False):
 			out += "aref "
 			out = recursive_ast_to_string(factor, out, indent_level + 1, continuation=True)
 			out += obj.exp
+		else:
+			out += "("
+			out = recursive_ast_to_string(factor, out, indent_level + 1, continuation=True)
+			out += ")"
 		
 	elif obj.__class__.__name__ == "str":
 		# literal
@@ -1421,8 +1448,6 @@ def recursive_ast_to_string(obj, out, indent_level, continuation=False):
 		else:
 			throw_error("Parser error, unknown literal")
 			
-	
-		
 	else:
 		throw_error("Parser error while writing " + obj.__class__.__name__)
 
@@ -1504,6 +1529,10 @@ def add_to_ast(token):
 # handle tokens that have less whitespace than we hope for, such as (int) or :void
 # puts space between all special characters
 def read_tight_code(token, internal=False):
+	if is_stringliteral(token):
+		space = "\x20"
+		new_line = token.replace(" ", space)
+		return new_line
 	tight_tokens = ['(', ')', '{', '}', ',', ':', ';']
 	new_line = token
 	for t in tight_tokens:
@@ -2207,10 +2236,10 @@ def handle_exp(token, end):
 					current_obj.add_exp(exp_obj)
 					expecting = expecting[1:] # exp finished
 				else:
-					throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses")
+					throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses: " + str(current_obj.raw))
 			else:
 				if '(' != exp_grammar_stack.pop(0):
-					throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses")
+					throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses: " + str(current_obj.raw))
 				else:
 					current_obj.raw_append(token) # single char is part of exp
 		elif token == ']':
@@ -2223,10 +2252,10 @@ def handle_exp(token, end):
 					current_obj.add_exp(exp_obj)
 					expecting = expecting[1:] # exp finished
 				else:
-					throw_error("Syntax error while parsing <exp>", addl="Mismatching brackets")
+					throw_error("Syntax error while parsing <exp>", addl="Mismatching brackets: " + str(current_obj.raw))
 			else:
 				if '[' != exp_grammar_stack.pop(0):
-					throw_error("Syntax error while parsing <exp>", addl="Mismatching brackets")
+					throw_error("Syntax error while parsing <exp>", addl="Mismatching brackets: " + str(current_obj.raw))
 				else:
 					current_obj.raw_append(token) # single char is part of exp	
 		elif token == ';':
@@ -2238,7 +2267,7 @@ def handle_exp(token, end):
 				current_obj.add_exp(exp_obj)
 				expecting = expecting[1:] # exp finished
 			else:
-				throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses or brackets")
+				throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses or brackets: " + str(current_obj.raw))
 		else:
 			current_obj.raw_append(token) # single char is part of exp
 	
@@ -2545,6 +2574,7 @@ def is_floatliteral(token):
 			e_valid = e_valid and after_e[1:]
 		after_valid = before_e_valid and e_valid
 	return before_valid and after_valid
+	
 	
 def is_stringliteral(token):
 	str = token[1:-1]

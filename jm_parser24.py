@@ -505,6 +505,7 @@ class Exp:
 			print("DEBUG: raw = ")
 			for f in self.raw:
 				print(str(f))
+		self.is_new = True
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing new")
 		if self.current_factor.id is None and self.current_factor.factor_type is None:
@@ -713,6 +714,10 @@ class Exp:
 				
 		handled = False
 		
+		if DEBUG_LEVEL > 2.5 and not illegal:
+			print("DEBUG: ------- waiting for ready (press enter to continue)")
+			raw_input()
+		
 		self.current_factor.factor_rest = FactorRest()
 		self.current_factor.factor_rest.parent_factor = self.current_factor
 		self.current_factor = self.current_factor.factor_rest
@@ -738,12 +743,15 @@ class Exp:
 									throw_error("Syntax error while parsing <actuals> of <factor>")
 								else:
 									self.raw.pop(new_exp_end)
-									new_exp = self.raw[self.index : new_exp_end]
+									new_exp = []
+									for i in range(self.index, new_exp_end):
+										new_exp.append(self.raw.pop(i))
 									actuals = self.handle_actuals(new_exp)
 									if len(actuals):
 										for a in actuals:
 											self.current_factor.add_actual(a)
 									self.handle_factor_rest()
+									return
 							elif s == '.':
 								handled = True
 								self.raw.pop(self.index)
@@ -922,6 +930,7 @@ class Factor():
 		self.factor_type = None
 		self.factor_rest = None
 		self.parent_factor = None
+		self.is_new = False
 		
 	def set_valid(self, v):
 		self.valid = v
@@ -1045,6 +1054,8 @@ def run(input, output):
 	if illegal:
 		print("\nEncountered syntax error while parsing " + str(input) + ":")
 		print(error_msg)
+		if DEBUG_LEVEL > 1.5:
+			print(ast_to_string())
 			
 			
 def tokenize_line(line, repeat=False):
@@ -1216,7 +1227,6 @@ def recursive_ast_to_string(obj, out, indent_level, continuation=False):
 		out += ")"
 		
 	elif obj.__class__.__name__ == "Stm":
-		#out = out[:-1] # remove an extra paren
 		if obj.style == "empty":
 			out += "skip"
 		elif obj.style == "exp":
@@ -1367,13 +1377,16 @@ def recursive_ast_to_string(obj, out, indent_level, continuation=False):
 			elif obj.factor_type is not None:
 				out += "newObject (classApp " + obj.id + " ( "
 				throw_error("Parser error, undefined handling of newObject <factor> <<types>>")
-			elif obj.id is not None:
+			elif obj.is_new:
 				out += "newObject " + obj.id + " ( "
 				if obj.exp:
 					out = recursive_ast_to_string(obj.exp, out, indent_level + 1, continuation=True)
 				out += ")"
-			else:
-				throw_error("Parser error, undefined handling of <factor>")
+			else: # call of something else
+				if obj.id:
+					out += obj.id + " ( "
+				else:
+					throw_error("Parser error, undefined <factor>")
 	elif obj.__class__.__name__ == "FactorRest":
 		factor = copy.copy(obj.parent_factor)
 		factor.factor_rest = None # marking that we already made note of the factor-rest

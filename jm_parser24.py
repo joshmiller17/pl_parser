@@ -28,6 +28,7 @@ RELOPS = ["==", "!=", "<", "<=", ">", ">="]
 ADDOPS = ["+", "-"]
 MULOPS = ["*", "/"]
 UNOPS = ["!", "-"]
+OPS = OROPS + ANDOPS + RELOPS + ADDOPS + MULOPS + UNOPS
 PRINTABLES = [" ", "!", "#", "$", "%", "&", "(", ")", "*", \
        "+", ",", "-", ".", "/", ":", ";", "<", "=", ">", "?", "@", "[", "]", "^", "{", "}", "~"]
 STM_REDIRECTS = {";" : "<stm-empty>", "if" : "<stm-if>", \
@@ -385,6 +386,9 @@ class Exp:
 		self.grammar_stack = [] # for counting matching () and []
 		self.index = 0 # used as a pointer to where in the raw array we're processing
 		self.current_factor = None
+		self.left = None
+		self.op = None
+		self.right = None
 		
 	def raw_append(self, r):
 		self.raw.append(r)
@@ -403,7 +407,11 @@ class Exp:
 	def make_factors(self):
 		self.index = 0
 		while self.index < len(self.raw):
-			self.make_factor()
+			if self.raw[self.index] in OPS:
+				# op, ignore
+				self.index += 1
+			else:
+				self.make_factor()
 			try:
 				if "Factor" == self.raw[self.index].type:
 					self.index += 1
@@ -802,121 +810,151 @@ class Exp:
 	def assert_class(self, token, class_name):
 		t = token.__class__.__name__
 		if t != class_name:
-			throw_error("Syntax error while parsing <factor>", addl="Expected " + t + " to be " + class_name)
+			throw_error("Syntax error while parsing <factor>", addl="Expected " + str(t) + " to be " + class_name)
+		
+	# deprecated?
+	def clean_raw(self):
+		for r in range(len(self.raw)):
+			if self.raw[r].__class__.__name__ == "NoneType":
+				self.raw.pop(r)
 		
 	# Given raw string of <exp>, construct the abstract representations that compose it
 	def compile(self):
 		try: 
 			self.make_factors() # convert all pieces into factors and ops
-			
+			allowed_iterations = 100 # don't handle recursion past this much
 			if DEBUG_LEVEL > 1.5:
 				print("DEBUG: made factors")
 				print("DEBUG: factor index = " + str(self.index))
 				print("DEBUG: raw = ")
 				for f in self.raw:
 					print("> " + str(f))
-
-			while self.has_op(MULOPS):
-				for i in range(len(self.raw)):
+			self.clean_raw()
+			while self.has_op(MULOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in MULOPS:
 						term = Term()
 						term.set_op = self.raw[i]
-						term.set_right = self.raw.pop(i+1)
+						term.right = self.raw.pop(i+1)
 						self.assert_class(term.right, "Factor")
-						term.set_left = self.raw[i-1]
+						term.left = self.raw[i-1]
 						self.assert_class(term.left, "Factor")
 						self.raw[i-1] = term
-					
-			while self.has_op(ADDOPS):
-				# Convert remaining Factors into Simples
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "Factor":
-						old = self.raw.pop(i)
-						new = Simple()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			# Convert remaining Factors into Simples
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "Factor":
+					old = self.raw.pop(i)
+					new = Simple()
+					new.set_left(old)
+					self.raw.insert(i, new)
+			
+			
+			while self.has_op(ADDOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in ADDOPS:
 						simple = Simple()
 						simple.set_op = self.raw[i]
-						simple.set_right = self.raw.pop(i+1)
+						simple.right = self.raw.pop(i+1)
 						self.assert_class(simple.right, "Simple")
-						simple.set_left = self.raw[i-1]
+						simple.left = self.raw[i-1]
 						self.assert_class(simple.left, "Simple")
 						self.raw[i-1] = simple
-						
-			while self.has_op(RELOPS):
-				# Convert remaining Simples into Conjuncts
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "Simple":
-						old = self.raw.pop(i)
-						new = Conjunct()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			
+			
+			# Convert remaining Simples into Conjuncts
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "Simple":
+					old = self.raw.pop(i)
+					new = Conjunct()
+					new.set_left(old)
+					self.raw.insert(i, new)		
+
+					
+			while self.has_op(RELOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in RELOPS:
 						conjunct = Conjunct()
 						conjunct.set_op = self.raw[i]
-						conjunct.set_right = self.raw.pop(i+1)
+						conjunct.right = self.raw.pop(i+1)
 						self.assert_class(conjunct.right, "Conjunct")
-						conjunct.set_left = self.raw[i-1]
+						conjunct.left = self.raw[i-1]
 						self.assert_class(conjunct.left, "Conjunct")
 						self.raw[i-1] = conjunct
-						
-			while self.has_op(ANDOPS):
-				# Convert remaining Conjuncts into Disjuncts
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "Conjunct":
-						old = self.raw.pop(i)
-						new = Disjunct()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+					
+			# Convert remaining Conjuncts into Disjuncts
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "Conjunct":
+					old = self.raw.pop(i)
+					new = Disjunct()
+					new.set_left(old)
+					self.raw.insert(i, new)
+			while self.has_op(ANDOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in ANDOPS:
 						disjunct = Disjunct()
 						disjunct.set_op = self.raw[i]
-						disjunct.set_right = self.raw.pop(i+1)
+						disjunct.right = self.raw.pop(i+1)
 						self.assert_class(disjunct.right, "Disjunct")
-						disjunct.set_left = self.raw[i-1]
+						disjunct.left = self.raw[i-1]
 						self.assert_class(disjunct.left, "Disjunct")
 						self.raw[i-1] = disjunct
-						
-			while self.has_op(OROPS):
-				# Convert remaining Disjuncts into LHSs
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "Disjunct":
-						old = self.raw.pop(i)
-						new = LHS()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			# Convert remaining Disjuncts into LHSs
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "Disjunct":
+					old = self.raw.pop(i)
+					new = LHS()
+					new.set_left(old)
+					self.raw.insert(i, new)
+					
+			while self.has_op(OROPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in OROPS:
 						lhs = LHS()
 						lhs.set_op = self.raw[i]
-						lhs.set_right = self.raw.pop(i+1)
+						lhs.right = self.raw.pop(i+1)
 						self.assert_class(lhs.right, "LHS")
-						lhs.set_left = self.raw[i-1]
+						lhs.left = self.raw[i-1]
 						self.assert_class(lhs.left, "LHS")
 						self.raw[i-1] = lhs
-						
-			while self.has_op(ASSIGNOPS):
-				# Convert remaining LHS into Exp
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "LHS":
-						old = self.raw.pop(i)
-						new = Exp()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			# Convert remaining LHS into Exp
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "LHS":
+					old = self.raw.pop(i)
+					new = Exp()
+					new.left = old
+					self.raw.insert(i, new)
+					
+			while self.has_op(ASSIGNOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in ASSIGNOPS:
 						exp = Exp()
-						exp.set_op = self.raw[i]
-						exp.set_right = self.raw.pop(i+1)
+						exp.op = self.raw[i]
+						exp.right = self.raw.pop(i+1)
 						self.assert_class(exp.right, "Exp")
-						exp.set_left = self.raw[i-1]
+						exp.left = self.raw[i-1]
 						self.assert_class(exp.left, "Exp")
 						self.raw[i-1] = exp
-						
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			for r in self.raw:
+				if r in OPS:
+					throw_error("Syntax error in <exp>", addl="Misplaced " + str(r))
 			# assert there is only one exp
 			if len(self.raw) > 1 or len(self.raw) < 1:
 				if DEBUG_LEVEL > 1.5:

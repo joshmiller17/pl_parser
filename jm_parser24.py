@@ -138,6 +138,7 @@ class Fundec:
 		self.formals = []
 		self.block = None
 		self.expecting_more_vars = False
+		self.open_tvars = False
 		
 	def set_id(self, i):
 		self.id = i
@@ -2716,7 +2717,7 @@ def is_id(token, proto=False, permissive=False):
 	if not permissive:
 		valid = valid and is_valid_char(tok[0], mustbe=["lower"])
 	else:
-		valid = valid and is_valid_char(tok[0])
+		valid = valid and is_valid_char(tok[0], cantbe=["digit", "print", "_"])
 	if len(tok) > 1:
 		for c in tok[1:]:
 			valid = valid and is_valid_char(c, cantbe=["print"]) # subsequent
@@ -2742,7 +2743,6 @@ def is_intliteral(token):
 	return valid
 	
 def is_floatliteral(token):
-	print("!!!!!!!!!!!checking float literal: " + str(token)) # TODO remove
 	if token.find('.') == -1 or len(token) < 2: # can't be just '.'
 		return False
 	else:
@@ -2806,9 +2806,7 @@ def is_type(token, permissive=True):
 	angle_valid = True
 	t2_valid = True
 	type_token = token
-	
-	print("T: " + token) # TODO remove
-	
+		
 	if is_typeid(token):
 		return True
 	
@@ -2828,10 +2826,7 @@ def is_type(token, permissive=True):
 		if '>' == token[-1]:
 			angle_type = token[token.find('<')+1:-1]
 			type_token = token[:token.find('<')]
-			print("A: " + token) # TODO remove
-			print("TT: " + token) # TODO remove
 			for a in angle_type.split(','):
-				print("AA: " + a)
 				angle_valid = angle_valid and is_type(a, permissive=True)
 		else:
 			angle_valid = False

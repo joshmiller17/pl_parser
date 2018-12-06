@@ -1,0 +1,20 @@
+//Comment
+
+protocol proto {
+    
+}
+
+class c implements proto {
+    () { }
+
+    fun test () {
+        null;
+    }
+}
+
+{
+    printString(" test2 
+
+    eep
+    ");
+}

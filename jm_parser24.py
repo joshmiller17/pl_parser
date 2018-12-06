@@ -4,6 +4,12 @@ CS 7400
 Quirk 24 Parser
 Author: Josh Miller
 """
+
+"""
+NOTES
+- Error messages differentiate between syntax errors (fault of program) and parser error (my fault), used as assertions
+"""
+
 import traceback
 import copy
 
@@ -22,6 +28,7 @@ RELOPS = ["==", "!=", "<", "<=", ">", ">="]
 ADDOPS = ["+", "-"]
 MULOPS = ["*", "/"]
 UNOPS = ["!", "-"]
+OPS = OROPS + ANDOPS + RELOPS + ADDOPS + MULOPS + UNOPS
 PRINTABLES = [" ", "!", "#", "$", "%", "&", "(", ")", "*", \
        "+", ",", "-", ".", "/", ":", ";", "<", "=", ">", "?", "@", "[", "]", "^", "{", "}", "~"]
 STM_REDIRECTS = {";" : "<stm-empty>", "if" : "<stm-if>", \
@@ -45,8 +52,14 @@ current_obj = None
 current_obj_type = None
 object_stack = [None]
 object_type_stack = ["None"]
+current_token = ""
+temp_token = ""
 DEBUG_LEVEL = 2.5  # amount of debug output, range [0,3] in steps of 0.5 because debugging is messy
 
+
+############################
+######## CLASS DEFS ########
+############################
 
 
 class Protocol:
@@ -69,7 +82,16 @@ class Protocol:
 		
 	# must be a typeapp
 	def add_extends(self, t):
-		self.extends.append(t)
+		if t.__class__.__name__ == "str":
+			ta = Typeapp()
+			ta.typeid = t
+			t2 = ta
+		else:
+			t2 = t
+		if t2.__class__.__name__ == "Typeapp":
+			self.extends.append(t2)
+		else:
+			throw_error("Parser error, expected <typeapp>")
 		
 	def add_funproto(self, f):
 		self.funprotos.append(f)
@@ -169,7 +191,17 @@ class Class:
 		
 	# must be a typeapp
 	def add_implements(self, t):
-		self.implements.append(t)
+		if t.__class__.__name__ == "str":
+			ta = Typeapp()
+			ta.typeid = t
+			t2 = ta
+		else:
+			t2 = t
+		if t2.__class__.__name__ == "Typeapp":
+			self.implements.append(t2)
+		else:
+			throw_error("Parser error, expected <typeapp>")
+		
 		
 	def add_typevar(self, v):
 		self.typevars.append(v)
@@ -213,7 +245,7 @@ class Block:
 		
 class Stm:
 	def __init__(self):
-		self.style = None # {"empty", "exp", "if", "while", "return", "block", "halt", "for"}
+		self.style = None # {"empty", "exp", "if", "while", "return0", "return", "block", "halt", "for"}
 		self.exps = []
 		self.stms = []
 		self.independent = False
@@ -238,6 +270,37 @@ class Stm:
 	def __str__(self):
 		return recursive_ast_to_string(self, "", 0)
 		
+
+class Typeapp:
+	def __init__(self):
+		self.types = None
+		self.tvar = None
+		self.typeid = None
+		
+	def add_tvar(self, t):
+		self.tvar = t
+		
+	def add_typeid(self, t):
+		self.typeid = None
+		
+	def set_types(self, t):
+		self.types = t
+		
+class Types:
+	def __init__(self):
+		self.types = []
+		
+	def __repr__(self):
+		s = ""
+		for t in types:
+			s += t + ","
+		return s[:-1]
+	
+	def __str__(self):
+		s = ""
+		for t in types:
+			s += t + ","
+		return s[:-1]
 		
 class Dec:
 
@@ -323,6 +386,9 @@ class Exp:
 		self.grammar_stack = [] # for counting matching () and []
 		self.index = 0 # used as a pointer to where in the raw array we're processing
 		self.current_factor = None
+		self.left = None
+		self.op = None
+		self.right = None
 		
 	def raw_append(self, r):
 		self.raw.append(r)
@@ -341,13 +407,15 @@ class Exp:
 	def make_factors(self):
 		self.index = 0
 		while self.index < len(self.raw):
-			self.make_factor()
+			if self.raw[self.index] in OPS:
+				# op, ignore
+				self.index += 1
+			else:
+				self.make_factor()
 			try:
 				if "Factor" == self.raw[self.index].type:
-					if DEBUG_LEVEL > 1.5:
-						print("DEBUG: factor index = " + str(self.index))
-						print("DEBUG: raw = " + str(self.raw))
 					self.index += 1
+					
 			except Exception as e:
 				if illegal:
 					return
@@ -356,7 +424,9 @@ class Exp:
 	def make_factor(self):
 		if DEBUG_LEVEL > 1.5:
 			print("DEBUG: factor index = " + str(self.index))
-			print("DEBUG: raw = " + str(self.raw))
+			print("DEBUG: raw = ")
+			for f in self.raw:
+				print(str(f))
 			if DEBUG_LEVEL > 2.5:
 				if illegal:
 					return
@@ -373,9 +443,9 @@ class Exp:
 					self.new_factor()
 					self.handle_factor_unop()
 				else: # tight unop
-					new_tokens = read_tight_code(token,internal=True)
+					new_tokens = read_tight_code(self.raw.pop(self.index),internal=True)
 					for n in new_tokens:
-						self.raw.insert(i, n)
+						self.raw.insert(self.index, n)
 					return
 		# no unop, continue
 		if token == "new":
@@ -386,26 +456,37 @@ class Exp:
 			self.raw.pop(self.index) # remove lambda
 			self.new_factor()
 			self.handle_factor_lam()
+		elif '.' in token:
+			new_tokens = read_tight_code(self.raw.pop(self.index), internal=True, dot=True)
+			for n in new_tokens:
+				self.raw.insert(self.index, n)
+			return
 		elif '(' in token:
 			if '(' is token:
 				self.raw.pop(self.index) # remove (
 				self.new_factor()
 				self.handle_factor_exp()
 			else:
-				new_tokens = read_tight_code(token,internal=True)
+				new_tokens = read_tight_code(self.raw.pop(self.index),internal=True)
 				for n in new_tokens:
-					self.raw.insert(i, n)
+					self.raw.insert(self.index, n)
 				return
-		elif is_literal(token):
-			self.new_factor()
-			self.handle_factor_lit()
 		elif is_id(token):
 			self.new_factor()
 			self.handle_factor_id()
+		elif is_literal(token):
+			self.new_factor()
+			self.handle_factor_lit()
 		else:
-			throw_error("Syntax error while parsing <factor>")
+			throw_error("Syntax error while parsing <factor>", addl="Token <" + token + "> confused the parser")
 	
 	def handle_factor_unop(self):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling factor unop")
+			print("DEBUG: factor index = " + str(self.index))
+			print("DEBUG: raw = ")
+			for f in self.raw:
+				print(str(f))
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing <unop>")
 		if self.raw[self.index] not in UNOPS:
@@ -418,6 +499,12 @@ class Exp:
 		self.raw.insert(self.index, temp_factor)
 		
 	def handle_factor_lit(self):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling factor lit")
+			print("DEBUG: factor index = " + str(self.index))
+			print("DEBUG: raw = ")
+			for f in self.raw:
+				print(str(f))
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing <literal>")
 		if not is_literal(self.raw[self.index]):
@@ -427,6 +514,13 @@ class Exp:
 			self.handle_factor_rest()
 			
 	def handle_factor_new(self):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling factor new")
+			print("DEBUG: factor index = " + str(self.index))
+			print("DEBUG: raw = ")
+			for f in self.raw:
+				print(str(f))
+		self.current_factor.is_new = True
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing new")
 		if self.current_factor.id is None and self.current_factor.factor_type is None:
@@ -455,7 +549,7 @@ class Exp:
 			# fixme this doesn't handle recursive actuals
 			self.raw.pop(self.index)
 			new_exp_end = self.raw.index(')')
-			if new_exp_end == -1:
+			if new_exp_end < 0 or new_exp_end > len(self.raw)-1:
 				throw_error("Syntax error while parsing <actuals> of <factor>")
 			else:
 				self.raw.pop(new_exp_end)
@@ -469,6 +563,8 @@ class Exp:
 			throw_error("Syntax error while parsing <factor>")
 					
 	def handle_actuals(self, new_exp):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling actuals")
 		# exp, exp, exp, exp
 		actuals = []
 		current_exp = None
@@ -489,9 +585,33 @@ class Exp:
 		if current_exp is not None:
 			current_exp.compile()
 			actuals.append(current_exp)
+		if actuals == []: # must be at least one exp
+			actuals.append(Exp())
 		return actuals
 		
-	def handle_factor_exp(self, new_exp, end):
+	def handle_factor_exp(self):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling factor exp")
+			print("DEBUG: factor index = " + str(self.index))
+			print("DEBUG: raw = ")
+			for f in self.raw:
+				print(str(f))
+		if not self.current_factor:
+			throw_error("Assertion error: current <factor> is None while parsing <exp>")
+		# assume ( popped, exp next
+		new_exp_end = self.raw.index(')')
+		if new_exp_end == -1:
+			throw_error("Syntax error while parsing <exp> of <factor>")
+		else:
+			self.raw.pop(new_exp_end)
+			new_exp = self.raw[self.index : new_exp_end]
+			exp = self.handle_paren_exp(new_exp)
+			self.current_factor.add_exp(exp)
+			self.handle_factor_rest()
+		
+	def handle_factor_internal_exp(self, new_exp, end):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling factor internal exp")
 		current_exp = None
 		for token in new_exp:
 			if end == token:
@@ -505,16 +625,18 @@ class Exp:
 		throw_error("Reached end of <exp> without encountering closing token while parsing <factor>")
 	
 	def handle_paren_exp(self, new_exp):
-		self.handle_factor_exp(new_exp, ')')
+		self.handle_factor_internal_exp(new_exp, ')')
 	
 	def handle_bracket_exp(self, new_exp):
-		self.handle_factor_exp(new_exp, ']')
+		self.handle_factor_internal_exp(new_exp, ']')
 		
 		
 	def handle_factor_block(self, new_exp):
 		throw_error("Parser not defined for syntax <factor-block>") # TODO
 		
 	def handle_factor_formals(self, new_exp):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling factor formals")
 		formals = []
 		current_formal = Formal()
 		for token in new_exp:
@@ -534,6 +656,12 @@ class Exp:
 		return formals
 			
 	def handle_factor_lam(self):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling factor lam")
+			print("DEBUG: factor index = " + str(self.index))
+			print("DEBUG: raw = ")
+			for f in self.raw:
+				print(str(f))
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing lambda")
 		if '(' == self.raw[self.index]: # assume whitespace added
@@ -571,21 +699,15 @@ class Exp:
 		else:
 			throw_error("Syntax error while parsing <factor>")
 		
-	def handle_factor_exp(self):
-		if not self.current_factor:
-			throw_error("Assertion error: current <factor> is None while parsing <exp>")
-		# assume ( popped, exp next
-		new_exp_end = self.raw.index(')')
-		if new_exp_end == -1:
-			throw_error("Syntax error while parsing <exp> of <factor>")
-		else:
-			self.raw.pop(new_exp_end)
-			new_exp = self.raw[self.index : new_exp_end]
-			exp = self.handle_paren_exp(new_exp)
-			self.current_factor.add_exp(exp)
-			self.handle_factor_rest()
+
 		
 	def handle_factor_id(self):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling factor id")
+			print("DEBUG: factor index = " + str(self.index))
+			print("DEBUG: raw = ")
+			for f in self.raw:
+				print(str(f))
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing <id>")
 		token = self.raw.pop(self.index)
@@ -596,6 +718,12 @@ class Exp:
 			self.handle_factor_rest()
 		
 	def handle_factor_rest(self):
+		if DEBUG_LEVEL > 1.5:
+			print("DEBUG: handling factor rest")
+			print("DEBUG: factor index = " + str(self.index))
+			print("DEBUG: raw = ")
+			for f in self.raw:
+				print(str(f))
 		if not self.current_factor:
 			throw_error("Assertion error: current <factor> is None while parsing <factor-rest>")
 		
@@ -603,160 +731,237 @@ class Exp:
 				
 		handled = False
 		
-		if len(self.raw):
-			for s in specials:
-				if s in self.raw[self.index]:
-					if s != token:
-						new_tokens = read_tight_code(token,internal=True)
-						for n in new_tokens:
-							self.raw.insert(i, n)
-						self.handle_factor_rest()
-						return
-					else:
-						if s == '(':
-							handled = True
-							# fixme this doesn't handle recursive actuals
-							self.raw.pop(self.index)
-							new_exp_end = self.raw.index(')')
-							if new_exp_end == -1:
-								throw_error("Syntax error while parsing <actuals> of <factor>")
-							else:
-								self.raw.pop(new_exp_end)
-								new_exp = self.raw[self.index : new_exp_end]
-								actuals = self.handle_actuals(new_exp)
-								if len(actuals):
-									for a in actuals:
-										self.current_factor.add_actual(a)
-								self.handle_factor_rest()
-						elif s == '.':
-							handled = True
-							self.raw.pop(self.index)
-							self.handle_factor_id()
-						elif s == '[':
-							handled = True
-							self.raw.pop(self.index)
-							self.handle_factor_exp()
+		if DEBUG_LEVEL > 2.5 and not illegal:
+			print("DEBUG: ------- waiting for ready (press enter to continue)")
+			raw_input()
+		
+		self.current_factor.factor_rest = FactorRest()
+		self.current_factor.factor_rest.parent_factor = self.current_factor
+		self.current_factor = self.current_factor.factor_rest
+		
+		try:
+			if len(self.raw) > self.index and self.raw[self.index].__class__.__name__ == "str":
+				token = self.raw[self.index]
+				for s in specials:
+					if s in token:
+						if s != token:
+							new_tokens = read_tight_code(self.raw.pop(self.index),internal=True, dot=True)
+							for n in new_tokens:
+								self.raw.insert(self.index, n)
+							self.handle_factor_rest()
+							return
 						else:
-							throw_error("Syntax error while parsing <factor-rest>")
+							if s == '(':
+								handled = True
+								self.raw.pop(self.index)
+								paren_count = 0
+								new_exp_end = -1
+								for i in range(self.index, len(self.raw)):
+									if self.raw[i] == '(':
+										paren_count += 1
+									elif self.raw[i] == ')' and paren_count > 0:
+										paren_count -= 1
+									elif self.raw[i] == ')' and paren_count == 0:
+										new_exp_end = i
+										break
+								if new_exp_end < 0 or new_exp_end > len(self.raw)-1:
+									throw_error("Syntax error while parsing <actuals> of <factor>")
+								else:
+									self.raw.pop(new_exp_end)
+									new_exp = []
+									for _ in range(self.index, new_exp_end):
+										new_exp.append(self.raw.pop(self.index))
+									actuals = self.handle_actuals(new_exp)
+									if len(actuals):
+										for a in actuals:
+											self.current_factor.add_actual(a)
+									self.handle_factor_rest()
+									return
+							elif s == '.':
+								handled = True
+								self.raw.pop(self.index)
+								self.handle_factor_id()
+							elif s == '[':
+								handled = True
+								self.raw.pop(self.index)
+								self.handle_factor_exp()
+							else:
+								throw_error("Syntax error while parsing <factor-rest>")
+		except Exception as e:
+			tr = traceback.extract_stack()[1:-1]
+			throw_error("Syntax error while parsing <factor-rest>", trace=tr)
+			if DEBUG_LEVEL > 0.5:
+				print("DEBUG: Exception: " + str(e))
+				print("DEBUG: Factor=" + str(self.current_factor))
+				print("DEBUG: raw: " + str(self.raw))
+				print("DEBUG: index: " + str(self.index))
 		
 		if not handled:
 			# factor done
+			if DEBUG_LEVEL > 2:
+				print("DEBUG: Adding factor rest to : " + str(self.raw))
 			self.current_factor.set_valid(True)
+			while self.current_factor.parent_factor is not None:
+				self.current_factor = self.current_factor.parent_factor
 			self.raw.insert(self.index, self.current_factor)
+			self.current_factor = None
+			
 		
-	def assert_class(token, class_name):
+	def assert_class(self, token, class_name):
 		t = token.__class__.__name__
 		if t != class_name:
-			throw_error("Syntax error while parsing <factor>", addl="Expected " + t + " to be " + class_name)
+			throw_error("Syntax error while parsing <factor>", addl="Expected " + str(t) + " to be " + class_name)
+		
+	# deprecated?
+	def clean_raw(self):
+		for r in range(len(self.raw)):
+			if self.raw[r].__class__.__name__ == "NoneType":
+				self.raw.pop(r)
 		
 	# Given raw string of <exp>, construct the abstract representations that compose it
 	def compile(self):
 		try: 
 			self.make_factors() # convert all pieces into factors and ops
-
-			while self.has_op(MULOPS):
-				for i in range(len(self.raw)):
+			allowed_iterations = 100 # don't handle recursion past this much
+			if DEBUG_LEVEL > 1.5:
+				print("DEBUG: made factors")
+				print("DEBUG: factor index = " + str(self.index))
+				print("DEBUG: raw = ")
+				for f in self.raw:
+					print("> " + str(f))
+			self.clean_raw()
+			while self.has_op(MULOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in MULOPS:
 						term = Term()
 						term.set_op = self.raw[i]
-						term.set_right = self.raw.pop(i+1)
-						assert_class(term.right, "Factor")
-						term.set_left = self.raw[i-1]
-						assert_class(term.left, "Factor")
+						term.right = self.raw.pop(i+1)
+						self.assert_class(term.right, "Factor")
+						term.left = self.raw[i-1]
+						self.assert_class(term.left, "Factor")
 						self.raw[i-1] = term
-					
-			while self.has_op(ADDOPS):
-				# Convert remaining Factors into Simples
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "Factor":
-						old = self.raw.pop(i)
-						new = Simple()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			# Convert remaining Factors into Simples
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "Factor":
+					old = self.raw.pop(i)
+					new = Simple()
+					new.set_left(old)
+					self.raw.insert(i, new)
+			
+			
+			while self.has_op(ADDOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in ADDOPS:
 						simple = Simple()
 						simple.set_op = self.raw[i]
-						simple.set_right = self.raw.pop(i+1)
-						assert_class(term.right, "Simple")
-						simple.set_left = self.raw[i-1]
-						assert_class(term.left, "Simple")
+						simple.right = self.raw.pop(i+1)
+						self.assert_class(simple.right, "Simple")
+						simple.left = self.raw[i-1]
+						self.assert_class(simple.left, "Simple")
 						self.raw[i-1] = simple
-						
-			while self.has_op(RELOPS):
-				# Convert remaining Simples into Conjuncts
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "Simple":
-						old = self.raw.pop(i)
-						new = Conjunct()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			
+			
+			# Convert remaining Simples into Conjuncts
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "Simple":
+					old = self.raw.pop(i)
+					new = Conjunct()
+					new.set_left(old)
+					self.raw.insert(i, new)		
+
+					
+			while self.has_op(RELOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in RELOPS:
 						conjunct = Conjunct()
 						conjunct.set_op = self.raw[i]
-						conjunct.set_right = self.raw.pop(i+1)
-						assert_class(term.right, "Conjunct")
-						conjunct.set_left = self.raw[i-1]
-						assert_class(term.left, "Conjunct")
+						conjunct.right = self.raw.pop(i+1)
+						self.assert_class(conjunct.right, "Conjunct")
+						conjunct.left = self.raw[i-1]
+						self.assert_class(conjunct.left, "Conjunct")
 						self.raw[i-1] = conjunct
-						
-			while self.has_op(ANDOPS):
-				# Convert remaining Conjuncts into Disjuncts
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "Conjunct":
-						old = self.raw.pop(i)
-						new = Disjunct()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+					
+			# Convert remaining Conjuncts into Disjuncts
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "Conjunct":
+					old = self.raw.pop(i)
+					new = Disjunct()
+					new.set_left(old)
+					self.raw.insert(i, new)
+			while self.has_op(ANDOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in ANDOPS:
 						disjunct = Disjunct()
 						disjunct.set_op = self.raw[i]
-						disjunct.set_right = self.raw.pop(i+1)
-						assert_class(term.right, "Disjunct")
-						disjunct.set_left = self.raw[i-1]
-						assert_class(term.left, "Disjunct")
+						disjunct.right = self.raw.pop(i+1)
+						self.assert_class(disjunct.right, "Disjunct")
+						disjunct.left = self.raw[i-1]
+						self.assert_class(disjunct.left, "Disjunct")
 						self.raw[i-1] = disjunct
-						
-			while self.has_op(OROPS):
-				# Convert remaining Disjuncts into LHSs
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "Disjunct":
-						old = self.raw.pop(i)
-						new = LHS()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			# Convert remaining Disjuncts into LHSs
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "Disjunct":
+					old = self.raw.pop(i)
+					new = LHS()
+					new.set_left(old)
+					self.raw.insert(i, new)
+					
+			while self.has_op(OROPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in OROPS:
 						lhs = LHS()
 						lhs.set_op = self.raw[i]
-						lhs.set_right = self.raw.pop(i+1)
-						assert_class(term.right, "LHS")
-						lhs.set_left = self.raw[i-1]
-						assert_class(term.left, "LHS")
+						lhs.right = self.raw.pop(i+1)
+						self.assert_class(lhs.right, "LHS")
+						lhs.left = self.raw[i-1]
+						self.assert_class(lhs.left, "LHS")
 						self.raw[i-1] = lhs
-						
-			while self.has_op(ASSIGNOPS):
-				# Convert remaining LHS into Exp
-				for i in range(len(self.raw)):
-					if self.raw[i].__class__.__name__ == "LHS":
-						old = self.raw.pop(i)
-						new = Exp()
-						new.set_left(old)
-						self.raw.insert(i, new)
-				for i in range(len(self.raw)):
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			# Convert remaining LHS into Exp
+			for i in range(len(self.raw)):
+				if self.raw[i].__class__.__name__ == "LHS":
+					old = self.raw.pop(i)
+					new = Exp()
+					new.left = old
+					self.raw.insert(i, new)
+					
+			while self.has_op(ASSIGNOPS) and (allowed_iterations > 0):
+				allowed_iterations -= 1
+				for i in range(len(self.raw)-1):
 					if self.raw[i] in ASSIGNOPS:
 						exp = Exp()
-						exp.set_op = self.raw[i]
-						exp.set_right = self.raw.pop(i+1)
-						assert_class(term.right, "Exp")
-						exp.set_left = self.raw[i-1]
-						assert_class(term.left, "Exp")
+						exp.op = self.raw[i]
+						exp.right = self.raw.pop(i+1)
+						self.assert_class(exp.right, "Exp")
+						exp.left = self.raw[i-1]
+						self.assert_class(exp.left, "Exp")
 						self.raw[i-1] = exp
-						
+						self.raw.pop(i) # get rid of op
+			self.clean_raw()
+			for r in self.raw:
+				if r in OPS:
+					throw_error("Syntax error in <exp>", addl="Misplaced " + str(r))
 			# assert there is only one exp
 			if len(self.raw) > 1 or len(self.raw) < 1:
+				if DEBUG_LEVEL > 1.5:
+					print("DEBUG: exp error")
+					print("DEBUG: raw = ")
+					for f in self.raw:
+						print("> " + str(f))
 				throw_error("Parser error handling <exp>", addl="expected exactly 1 <exp>, got " + str(len(self.raw)) + ": " + str(self.raw))
 							
 		except Exception as e:
@@ -783,6 +988,9 @@ class Factor():
 		self.exp = None
 		self.types = None
 		self.factor_type = None
+		self.factor_rest = None
+		self.parent_factor = None
+		self.is_new = False
 		
 	def set_valid(self, v):
 		self.valid = v
@@ -819,7 +1027,12 @@ class Factor():
 		
 	def __str__(self):
 		return recursive_ast_to_string(self, "", 0)
-				
+
+class FactorRest(Factor):
+
+	def __init__(self):
+		Factor.__init__(self)	
+		
 class ExpPiece:
 
 	def __init__(self):
@@ -871,30 +1084,11 @@ class Term(ExpPiece):
 		self.type = "Term"
 		
 
-def stacktrace():
-	if DEBUG_LEVEL > 0.5:
-		print("\nDEBUG: Error traceback:")
-		for l in traceback.extract_stack()[1:-1]:
-			print("------ " + str(l))
-		print("Expecting: " + str(expecting))
-		print("Current object type: " + str(current_obj_type))
-		print("Current object: " + str(current_obj))
+############################
+######### MAIN #############
+############################
 		
-def throw_error(reason, addl=""):
-	global line_count
-	global illegal
-	global error_msg
-	if illegal and error_msg: # already have an error
-		return
-	illegal = True
-	error_line = line_count
-	error_msg = reason + " in line " + str(error_line)
-	if addl:
-		error_msg += "\n" + addl
-	stacktrace()
 
-
-	
 	
 def run(input, output):
 	import os
@@ -920,43 +1114,450 @@ def run(input, output):
 	if illegal:
 		print("\nEncountered syntax error while parsing " + str(input) + ":")
 		print(error_msg)
+		if DEBUG_LEVEL > 1.5:
+			print(ast_to_string())
 			
-
+			
+# convert line into tokens
+# some trickery involved for strings that span multiple lines
+# repeat parameter used if we need to re-tokenize
 def tokenize_line(line, repeat=False):
 	global parsing_string
+	global current_token
 	if DEBUG_LEVEL > 0 and not illegal and not repeat:
 		print("DEBUG: INPUT (line " + str(line_count) + "): " + line[:-1])
-	current_token = ""
+	if repeat: # if re-tokenizing, stash current token
+		temp_token = current_token
+		current_token = ""
 	for c in line:	
-		if ord(c) in WHITESPACE:
+		if c == "\"" and current_token != "":
+			# " marks start or end of token
+			if not parsing_string:
+				# new token
+				add_to_ast(current_token)
+				current_token = "" + c
+				parsing_string = True
+			else:
+				current_token += c
+				add_to_ast(current_token)
+				current_token = ""
+				parsing_string = False
+		elif ord(c) in WHITESPACE:
 			if parsing_string:
+				# write whitespace token as backslash escape readable char
+				if ord(c) == 0xa:
+					throw_error("Forbidden character: '\\n' in <stringliteral>")
+				elif ord(c) == 0xd:
+					throw_error("Forbidden character: '\\r' in <stringliteral>")
 				current_token += c
 			elif current_token != "":
+				# wrap up and send token
 				token = current_token
 				current_token = ""
 				if token.startswith("//"): # comment, skip the rest of line
-					current_token = ""
+					current_token = "" #redundant?
 					break
-				elif current_token.startswith("\""):
+				elif token.startswith("\""):
 					parsing_string = True
-				elif current_token.startswith("\"") and current_token.endswith("\"") and len(current_token) > 1:
+				elif token.startswith("\"") and token.endswith("\"") and len(token) > 1: #deprecated?
 					add_to_ast(token)
+					current_token = ""
+					parsing_string = False
 				else:
 					add_to_ast(token)
+					current_token = ""
 			else:
 				pass # just clearing whitespace
 		elif is_valid_char(c) or c == "\"":
 			current_token += c
 			if current_token.startswith("\""):
 				parsing_string = True
-			if current_token.startswith("\"") and current_token.endswith("\"") and len(current_token) > 1:
-				add_to_ast(token)
+			if current_token.startswith("\"") and current_token.endswith("\"") and len(current_token) > 1:  #deprecated?
+				add_to_ast(current_token)
+				current_token = ""
+				parsing_string = False
 		else:
 			throw_error("Forbidden character: \'" + str(c) + "\'")
 			break
 	if current_token and not current_token.startswith("//") and not parsing_string:
 		add_to_ast(current_token)
+		current_token = ""
+	if current_token.startswith("//"): # end of comment line
+		current_token = ""
+	if repeat:
+		current_token = temp_token
 	
+
+	
+############################
+####### PRINT TO AST #######
+############################
+	
+	
+def ast_to_string():
+	return setup_ast_to_string(protocols, classes, stms) + "\n"
+
+	
+def setup_ast_to_string(protocols, classes, stms):
+	if expecting[0] != "<end>":
+		throw_error("Error: reached end of program while expecting " + expecting[0])
+	out = ""
+	out += "(program ("
+	indent = 1	
+	for p in protocols:
+		out = recursive_ast_to_string(p, out, indent)
+	out += ") ("
+	for c in classes:
+		out = recursive_ast_to_string(c, out, indent)
+	out += ")"
+	for s in stms:
+		out = recursive_ast_to_string(s, out, indent)
+	out += ")"
+	if DEBUG_LEVEL > 0.5 and not illegal:
+		print("DEBUG: OUTPUT: ")
+		print(out)
+	return out
+	
+
+# recursively parse an object, adding to out str which gets returned
+# continuation parameter used to supress newline + indentation + (
+def recursive_ast_to_string(obj, out, indent_level, continuation=False):
+	if DEBUG_LEVEL > 2:
+		print("DEBUG: " + " " * indent_level + " PRINTING " + obj.__class__.__name__)
+	if DEBUG_LEVEL > 2.5:
+		print("DEBUG: ------- waiting for ready (press enter to continue)")
+		raw_input()
+			
+	if not continuation:
+		out += "\n" + INDENTATION * indent_level + "("
+		
+	if obj.__class__.__name__ == "Protocol":
+		out += "protoDec " + str(obj.typeid) + " ("
+		for tvar in obj.typevars:
+			out += str(tvar) + " "
+		out += ") ("
+		for t in obj.extends:
+			out = recursive_ast_to_string(t, out, indent_level + 1)
+		out += ") ("
+		for fp in obj.funprotos:
+			if fp == obj.funprotos[0]: # making format look like example
+				out = recursive_ast_to_string(fp, out, indent_level + 1)
+			else:
+				out = recursive_ast_to_string(fp, out, indent_level + 1)
+		out += ")"
+		
+	elif obj.__class__.__name__ == "Class":
+		out += "classDec " + str(obj.id) + " ( "
+		for tvar in obj.typevars:
+			out += str(tvar) + " "
+		out += ")("
+		for i in obj.implements:
+			out = recursive_ast_to_string(i, out, indent_level + 1)
+		out += ")(init ("
+		for formal in obj.init_formals:
+			out = recursive_ast_to_string(formal, out, indent_level + 1)
+		out += ") "
+		out = recursive_ast_to_string(obj.block, out, indent_level + 1)
+		out += ")("
+		for bd in obj.bodydecs:
+			out = recursive_ast_to_string(bd, out, indent_level + 1)
+		out += ")"
+		
+	elif obj.__class__.__name__ == "Funproto":
+		out += "funProto " + str(obj.id) + " ("
+		for tvar in obj.typevars:
+			out += str(tvar) + " "
+		out += ") ("
+		for formal in obj.formals:
+			out = recursive_ast_to_string(formal, out, indent_level + 1)
+			if formal != obj.formals[-1]: # make formatting look like example
+				out += " "
+		out += ") "
+		if obj.rtype:
+			out += " (" + str(obj.rtype) + ")"
+		else:
+			out += "(void) "
+		
+	elif obj.__class__.__name__ == "Fundec":
+		out += "funDec " + str(obj.id) + " ( "
+		for tvar in obj.typevars:
+			out += str(tvar) + " "
+		out += ")("
+		for formal in obj.formals:
+			out = recursive_ast_to_string(formal, out, indent_level + 1)
+		out += ")"
+		if obj.rtype:
+			out += " (" + str(obj.rtype) + ")"
+		else:
+			out += "(void) "
+		out = recursive_ast_to_string(obj.block, out, indent_level + 1)
+		
+	elif obj.__class__.__name__ == "Typeapp":
+		if obj.typeid:
+			out += "typeApp " + str(obj.typeid) + "()" # TODO plus <<types>>
+		else: # obj.tvar:
+			out += "typeApp " + str(obj.tvar)
+		
+	elif obj.__class__.__name__ == "Formal":
+		out += "formal (" + str(obj.type) + ") " + str(obj.id)
+		
+	elif obj.__class__.__name__ == "Block":
+		out += "block ( "
+		for dec in obj.local_decs:
+			out = recursive_ast_to_string(dec, out, indent_level + 1)
+		out += ") ("
+		for stm in obj.stms:
+			out = recursive_ast_to_string(stm, out, indent_level + 1)
+		out += ")"
+		
+	elif obj.__class__.__name__ == "Stm":
+		if obj.style == "empty":
+			out += "skip"
+		elif obj.style == "exp":
+			if len(obj.exps) != 1:
+				throw_error("Parser error: expected <expStm> to have exactly 1 <exp>, has " + str(len(obj.exps)))
+			out += "expStm "
+			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1, continuation=True)
+		elif obj.style == "if":
+			if len(obj.exps) != 1 or len(obj.stms) != 2:
+				throw_error("Parser error: expected <ifStm> to have exactly 1 <exp> and 2 <stm>")
+			out += "("
+			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1,continuation=True)
+			out += " "
+			out = recursive_ast_to_string(obj.stms[0], out, indent_level + 1,continuation=True)
+			out += " "
+			out = recursive_ast_to_string(obj.stms[1], out, indent_level + 1,continuation=True)
+		elif obj.style == "while":
+			if len(obj.exps) != 1 or len(obj.stms) != 1:
+				throw_error("Parser error: expected <whileStm> to have exactly 1 <exp> and 1 <stm>")
+			out += "while "
+			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1,continuation=True)
+			out = recursive_ast_to_string(obj.stms[0], out, indent_level + 1,continuation=True)
+		elif obj.style == "for":
+			if len(obj.exps) != 2 or len(obj.stms) != 1:
+				throw_error("Parser error: expected <forStm> to have exactly 2 <exp> and 1 <stm>")
+			out = recursive_ast_to_string(obj.vardec, out, indent_level + 1,continuation=True)
+			new_stm = obj
+			new_stm.set_style("while")
+			increment_exp = new_stm.exps.pop(1)
+			increment_stm = Stm()
+			increment_stm.set_style("exp")
+			increment_stm.add_exp(increment_exp)
+			new_stm.add_stm(increment_stm)
+			obj = recursive_ast_to_string(new_stm, out, indent_level + 1,continuation=True)
+		elif obj.style == "return0":
+			out += "return0"
+		elif obj.style == "return":
+			if len(obj.exps):
+				out += "return "
+				out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1, continuation=True)
+			else:
+				out += "return0" #redundant failure catch?
+		elif obj.style == "block":
+			out = out[:-1] # skip extra set of parens
+			out = recursive_ast_to_string(obj.block, out, indent_level + 1)
+			out = out[:-1] # skip extra set of parens
+		elif obj.style == "halt":
+			if len(obj.exps) != 1:
+				throw_error("Parser error: expected <haltStm> to have exactly 1 <exp>")
+			out += "(halt "
+			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1,continuation=True)
+			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1,continuation=True)
+		else:
+			throw_error("Parser error: Stm with no specified style")
+		
+	elif obj.__class__.__name__ == "Constdec":
+		out += "constant " + str(obj.type) + " " + str(obj.id) + " " + str(obj.lit)
+		
+	elif obj.__class__.__name__ == "Vardec":
+		out += "varDec "
+		if is_typeid(obj.type):
+			ta = Typeapp()
+			ta.typeid = obj.type
+			out = recursive_ast_to_string(ta, out, indent_level + 1)
+		else:
+			out += str(obj.type)
+		out += " " + str(obj.id) + " "
+		out = recursive_ast_to_string(obj.exp, out, indent_level + 1, continuation=True)
+		
+	elif obj.__class__.__name__ == "Globaldec":
+		out += "static " + str(obj.type) + " " + str(obj.id) + " " + str(obj.lit)
+		
+	elif obj.__class__.__name__ == "Fielddec":
+		out += "fieldDec (formal " + str(obj.type) + " " + str(obj.id)
+		
+	elif obj.__class__.__name__ == "Exp":
+		for r in obj.raw:
+			out = recursive_ast_to_string(r, out, indent_level + 1, continuation=True)
+	elif obj.__class__.__name__ == "LHS":
+		if obj.op is not None:
+			if obj.op not in ASSIGNOPS:
+				throw_error("Parser error: expected <lhs> to use <assignop>")
+			else:
+				out += "(assign "
+				out = recursive_ast_to_string(obj.left, out, indent_level + 1, continuation=True)
+				out = recursive_ast_to_string(obj.right, out, indent_level + 1, continuation=True)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
+				
+	
+	elif obj.__class__.__name__ == "Disjunct":
+		if obj.op is not None:
+			out += "(binOpn "
+			out += obj.op + " "
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1, continuation=True)
+			out = recursive_ast_to_string(obj.right, out, indent_level + 1, continuation=True)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1, continuation=True)
+	
+	elif obj.__class__.__name__ == "Conjunct":
+		if obj.op is not None:
+			out += "(binOpn "
+			out += obj.op + " "
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1, continuation=True)
+			out = recursive_ast_to_string(obj.right, out, indent_level + 1, continuation=True)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1, continuation=True)
+	
+	elif obj.__class__.__name__ == "Simple":
+		if obj.op is not None:
+			out += "(binOpn "
+			out += obj.op + " "
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1, continuation=True)
+			out = recursive_ast_to_string(obj.right, out, indent_level + 1, continuation=True)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1, continuation=True)
+	
+	elif obj.__class__.__name__ == "Term":
+		if obj.op is not None:
+			out += "(binOpn "
+			out += obj.op + " "
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1, continuation=True)
+			out = recursive_ast_to_string(obj.right, out, indent_level + 1, continuation=True)
+		else:
+			out = recursive_ast_to_string(obj.left, out, indent_level + 1, continuation=True)
+		
+	elif obj.__class__.__name__ == "Factor":
+		if obj.factor_rest:
+			out = recursive_ast_to_string(obj.factor_rest, out, indent_level + 1, continuation=True)
+		else:
+			if obj.unop is not None:
+				out += "(unOpn "
+				out += obj.unop + " "
+				out = recursive_ast_to_string(obj.subfactor, out, indent_level + 1, continuation=True)
+			elif obj.literal is not None:
+				out = recursive_ast_to_string(obj.literal, out, indent_level + 1, continuation=True)
+			elif obj.formals != []:
+				out += "(lambda ("
+				for formal in obj.formals:
+					out = recursive_ast_to_string(formal, out, indent_level + 1, continuation=True) 
+				out += ")"
+				if obj.rtype:
+					out += "(" + obj.rtype + ")"
+				else:
+					out += "(void)"
+				out = recursive_ast_to_string(obj.block, out, indent_level + 1, continuation=True)
+				
+			elif obj.factor_type is not None:
+				out += "newObject (classApp " + obj.id + " ( "
+				throw_error("Parser error, undefined handling of newObject <factor> <<types>>")
+			elif obj.is_new:
+				out += "newObject " + obj.id + " ( "
+				if obj.exp:
+					out = recursive_ast_to_string(obj.exp, out, indent_level + 1, continuation=True)
+				out += ")"
+			else: # call of something else
+				if obj.id:
+					out += obj.id + " " #+ " ( " # fixme?
+				else:
+					throw_error("Parser error, undefined <factor>")
+	elif obj.__class__.__name__ == "FactorRest":
+		if obj.factor_rest:
+			out = recursive_ast_to_string(obj.factor_rest, out, indent_level + 1, continuation=True)
+		else:
+			factor = copy.copy(obj.parent_factor)
+			factor.factor_rest = None # marking that we already made note of the factor-rest
+			if obj.actuals != []:
+				out += "call "
+				out = recursive_ast_to_string(factor, out, indent_level + 1, continuation=True)
+				out += "("
+				for actual in obj.actuals:
+					out = recursive_ast_to_string(actual, out, indent_level + 1, continuation=True)
+				out += ")"
+			elif obj.id != None:
+				out += "(dot "
+				out += obj.id + " "
+				out = recursive_ast_to_string(factor, out, indent_level + 1, continuation=True)
+				out += ")"
+			elif obj.exp != None:
+				out += "(aref "
+				out = recursive_ast_to_string(factor, out, indent_level + 1, continuation=True)
+				out += obj.exp
+				out += ")"
+			else:
+				out += "("
+				out = recursive_ast_to_string(factor, out, indent_level + 1, continuation=True)
+				out += ")"
+		
+	elif obj.__class__.__name__ == "str":
+		# literal
+		if obj == "null" or obj == "true" or obj == "false":
+			out += "(" + obj + ")"
+		elif is_charliteral(obj):
+			out += "(charLiteral " + obj
+		elif is_stringliteral(obj):
+			out += "(stringLiteral " + obj
+		elif is_intliteral(obj):
+			out += "(intLiteral " + obj
+		elif is_floatliteral(obj):
+			out += "(floatLiteral " + obj
+		else:
+			throw_error("Parser error, unknown literal")
+			
+	else:
+		throw_error("Parser error while writing " + obj.__class__.__name__)
+
+	if not continuation:
+		out += ")"
+		
+	if DEBUG_LEVEL > 2.5:
+		print("DEBUG: JUST PRINTED " + obj.__class__.__name__)
+		print("DEBUG: CURRENT OUTPUT: ")
+		print(out)
+		print("DEBUG: ------- waiting for ready (press enter to continue)")
+		raw_input()
+		
+	return out
+
+
+############################
+#### GENERAL HELPERS #######
+############################
+		
+def stacktrace(trace=None):
+	if DEBUG_LEVEL > 0.5:
+		print("\nDEBUG: Error traceback:")
+		if not trace:
+			trace = traceback.extract_stack()[1:-1]
+		for l in trace:
+			print("------ " + str(l))
+		print("Expecting: " + str(expecting))
+		print("Current object type: " + str(current_obj_type))
+		print("Current object: " + str(current_obj))
+		
+def throw_error(reason, addl="", trace=None):
+	global line_count
+	global illegal
+	global error_msg
+	if illegal and error_msg: # already have an error
+		return
+	illegal = True
+	error_line = line_count
+	error_msg = reason + " in line " + str(error_line)
+	if addl:
+		error_msg += "\n" + addl
+	stacktrace(trace)
+
 # if current obj handling is None, pop from stack
 def check_current_obj():
 	global current_obj
@@ -1002,8 +1603,14 @@ def add_to_ast(token):
 
 # handle tokens that have less whitespace than we hope for, such as (int) or :void
 # puts space between all special characters
-def read_tight_code(token, internal=False):
+def read_tight_code(token, internal=False, dot=False):
+	if is_stringliteral(token):
+		space = "\x20"
+		new_line = token.replace(" ", space)
+		return new_line
 	tight_tokens = ['(', ')', '{', '}', ',', ':', ';']
+	if dot:
+		tight_tokens.append('.')
 	new_line = token
 	for t in tight_tokens:
 		new_line = new_line.replace(t, " " + t + " ")
@@ -1023,274 +1630,38 @@ def assert_obj_type(t):
 		throw_error("Parser Error: Encountered a " + t + " while expecting object of type " + str(current_obj_type))
 		return False
 	
+		
+# push current object to stack
+def push_stack():
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_stack_type
+	object_stack.insert(0, current_obj)
+	object_type_stack.insert(0, current_obj_type)
+	current_obj = None
+	current_obj_type = None
 	
-def setup_ast_to_string(protocols, classes, stms):
-	out = ""
-	out += "(program\n("
-	indent = 1	
-	for p in protocols:
-		out = recursive_ast_to_string(p, out, indent, suppress_nl=True)
-	out += ")("
-	for c in classes:
-		out = recursive_ast_to_string(c, out, indent, suppress_nl=True)
-	out += ")("
-	for s in stms:
-		out = recursive_ast_to_string(s, out, indent, suppress_nl=True)
-	out += ")"
-	return out
-	
-	
-def recursive_ast_to_string(obj, out, indent_level,suppress_nl=False):
-	if DEBUG_LEVEL > 1:
-		print("DEBUG: PRINTING AST FOR " + obj.__class__.__name__)
-	
-	if suppress_nl:
-		out += INDENTATION * indent_level + "("
+# pop object from stack to current
+def pop_stack():
+	global current_obj
+	global current_obj_type
+	global object_stack
+	global object_type_stack
+	if len(object_stack) > 0:
+		current_obj = object_stack[0]
+		current_obj_type = object_type_stack[0]
+		object_stack = object_stack[1:]
+		object_type_stack = object_type_stack[1:]
 	else:
-		out += "\n" + INDENTATION * indent_level + "("
+		current_obj = None
+		current_obj_type = None
 		
-	if obj.__class__.__name__ == "Protocol":
-		out += "protoDec\n" + str(obj.typeid) + "\n("
-		for tvar in obj.typevars:
-			out += str(tvar) + " "
-		out += ")\n("
-		for typeapp in obj.extends:
-			out += str(typeapp) + " "
-		out += ")\n("
-		for fp in obj.funprotos:
-			if fp == obj.funprotos[0]: # making format look like example
-				out = recursive_ast_to_string(fp, out, indent_level + 1, suppress_nl=True)
-			else:
-				out = recursive_ast_to_string(fp, out, indent_level + 1)
-		out += ")"
-
-		
-	elif obj.__class__.__name__ == "Class":
-		out += "classDec " + str(obj.id) + " ( "
-		for tvar in obj.typevars:
-			out += str(tvar) + " "
-		out += ")("
-		for typeapp in obj.implements:
-			out += "(typeApp " + str(typeapp) + " "
-		out += "))(init ("
-		for formal in obj.init_formals:
-			out = recursive_ast_to_string(formal, out, indent_level + 1)
-		out += ") "
-		out = recursive_ast_to_string(obj.block, out, indent_level + 1)
-		out += ")("
-		for bd in obj.bodydecs:
-			out = recursive_ast_to_string(bd, out, indent_level + 1)
-		out += ")"
-		
-	elif obj.__class__.__name__ == "Funproto":
-		out += "funProto " + str(obj.id) + " ("
-		for tvar in obj.typevars:
-			out += str(tvar) + " "
-		out += ")\n("
-		for formal in obj.formals:
-			out = recursive_ast_to_string(formal, out, indent_level + 1, suppress_nl=True)
-			if formal != obj.formals[-1]: # make formatting look like example
-				out += " "
-		out += ") "
-		if obj.rtype:
-			out += "\n(" + str(obj.rtype) + ")"
-		else:
-			out += "(void) "
-		
-	elif obj.__class__.__name__ == "Fundec":
-		out += "funDec " + str(obj.id) + " ( "
-		for tvar in obj.typevars:
-			out += str(tvar) + " "
-		out += ")("
-		for formal in obj.formals:
-			out = recursive_ast_to_string(formal, out, indent_level + 1)
-		out += ")"
-		if obj.rtype:
-			out += "\n(" + str(obj.rtype) + ")"
-		else:
-			out += "(void) "
-		out = recursive_ast_to_string(obj.block, out, indent_level + 1)
-		
-	elif obj.__class__.__name__ == "Formal":
-		out += "formal (" + str(obj.type) + ") " + str(obj.id)
-		
-	elif obj.__class__.__name__ == "Block":
-		out += "block ( "
-		for dec in obj.local_decs:
-			out = recursive_ast_to_string(dec, out, indent_level + 1)
-		out += ") ("
-		for stm in obj.stms:
-			out = recursive_ast_to_string(stm, out, indent_level + 1)
-		out += ")"
-		
-	elif obj.__class__.__name__ == "Stm":
-		if obj.style == "empty":
-			out += "(skip)"
-		elif obj.style == "exp":
-			if len(obj.exps) != 1:
-				throw_error("Parser error: expected <expStm> to have exactly 1 <exp>, has " + str(len(obj.exps)))
-			out += "(expStm "
-			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
-		elif obj.style == "if":
-			if len(obj.exps) != 1 or len(obj.stms) != 2:
-				throw_error("Parser error: expected <ifStm> to have exactly 1 <exp> and 2 <stm>")
-			out += "("
-			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
-			out += " "
-			out = recursive_ast_to_string(obj.stms[0], out, indent_level + 1)
-			out += " "
-			out = recursive_ast_to_string(obj.stms[1], out, indent_level + 1)
-		elif obj.style == "while":
-			if len(obj.exps) != 1 or len(obj.stms) != 1:
-				throw_error("Parser error: expected <whileStm> to have exactly 1 <exp> and 1 <stm>")
-			out += "while "
-			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
-			out = recursive_ast_to_string(obj.stms[0], out, indent_level + 1)
-		elif obj.style == "for":
-			if len(obj.exps) != 2 or len(obj.stms) != 1:
-				throw_error("Parser error: expected <forStm> to have exactly 2 <exp> and 1 <stm>")
-			out = recursive_ast_to_string(obj.vardec, out, indent_level + 1)
-			new_stm = obj
-			new_stm.set_style("while")
-			increment_exp = new_stm.exps.pop(1)
-			increment_stm = Stm()
-			increment_stm.set_style("exp")
-			increment_stm.add_exp(increment_exp)
-			new_stm.add_stm(increment_stm)
-			obj = recursive_ast_to_string(new_stm, out, indent_level + 1)
-		elif obj.style == "return":
-			if len(obj.exps):
-				out += "(return "
-				out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
-			else:
-				out += "(return0)"
-		elif obj.style == "block":
-			out += "("
-			out = recursive_ast_to_string(obj.block, out, indent_level + 1)
-		elif obj.style == "halt":
-			if len(obj.exps) != 1:
-				throw_error("Parser error: expected <haltStm> to have exactly 1 <exp>")
-			out += "(halt "
-			out = recursive_ast_to_string(obj.exps[0], out, indent_level + 1)
-		
-	elif obj.__class__.__name__ == "Constdec":
-		out += "constant " + str(obj.type) + " " + str(obj.id) + " " + str(obj.lit)
-		
-	elif obj.__class__.__name__ == "Vardec":
-		out += "varDec " + str(obj.type) + " " + str(obj.id) + " "
-		out = recursive_ast_to_string(obj.exp, out, indent_level + 1)
-		
-	elif obj.__class__.__name__ == "Globaldec":
-		out += "static " + str(obj.type) + " " + str(obj.id) + " " + str(obj.lit)
-		
-	elif obj.__class__.__name__ == "Fielddec":
-		out += "fieldDec (formal " + str(obj.type) + " " + str(obj.id)
-		
-	elif obj.__class__.__name__ == "Exp":
-		for r in obj.raw:
-			out = recursive_ast_to_string(r, out, indent_level + 1)
-	elif obj.__class__.__name__ == "LHS":
-		if obj.op is not None:
-			if obj.op not in ASSIGNOPS:
-				throw_error("Parser error: expected <lhs> to use <assignop>")
-			else:
-				out += "(assign "
-				out = recursive_ast_to_string(obj.left, out, indent_level + 1)
-				out = recursive_ast_to_string(obj.right, out, indent_level + 1)
-		else:
-			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
-				
 	
-	elif obj.__class__.__name__ == "Disjunct":
-		if obj.op is not None:
-			out += "(binOpn "
-			out += obj.op + " "
-			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
-			out = recursive_ast_to_string(obj.right, out, indent_level + 1)
-		else:
-			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
+############################
+### TOKEN HANDLERS #########
+############################
 	
-	elif obj.__class__.__name__ == "Conjunct":
-		if obj.op is not None:
-			out += "(binOpn "
-			out += obj.op + " "
-			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
-			out = recursive_ast_to_string(obj.right, out, indent_level + 1)
-		else:
-			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
-	
-	elif obj.__class__.__name__ == "Simple":
-		if obj.op is not None:
-			out += "(binOpn "
-			out += obj.op + " "
-			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
-			out = recursive_ast_to_string(obj.right, out, indent_level + 1)
-		else:
-			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
-	
-	elif obj.__class__.__name__ == "Term":
-		if obj.op is not None:
-			out += "(binOpn "
-			out += obj.op + " "
-			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
-			out = recursive_ast_to_string(obj.right, out, indent_level + 1)
-		else:
-			out = recursive_ast_to_string(obj.left, out, indent_level + 1)
-		
-	elif obj.__class__.__name__ == "Factor":
-		if obj.unop is not None:
-			out += "(unOpn "
-			out += obj.unop + " "
-			out = recursive_ast_to_string(obj.subfactor, out, indent_level + 1)
-		elif obj.literal is not None:
-			out = recursive_ast_to_string(obj.literal, out, indent_level + 1) # TODO factor rest?
-		elif obj.formals != []:
-			out += "(lambda ("
-			for formal in obj.formals:
-				out = recursive_ast_to_string(formal, out, indent_level + 1) 
-			out += ")" # TODO factor rest?
-			if obj.rtype:
-				out += "(" + obj.rtype + ")"
-			else:
-				out += "(void)"
-			out = recursive_ast_to_string(obj.block, out, indent_level + 1)
-		elif obj.factor_type is not None:
-			out += "(newObject (classApp " + obj.id + " ( "
-			throw_error("Parser error, undefined handling of newObject <factor> <<types>>")
-		elif obj.id is not None:
-			out += "(newObject " + obj.id + " ( "
-			out = recursive_ast_to_string(obj.exp, out, indent_level + 1) # TODO factor-rest?
-			out += "))"
-		else:
-			throw_error("Parser error, undefined handling of <factor>") # TODO call, aref, actuals
-	elif obj.__class__.__name__ == "str":
-		# literal
-		if obj == "null" or obj == "true" or obj == "false":
-			out += "(" + obj + ")"
-		elif is_charliteral(obj):
-			out += "(charLiteral " + obj
-		elif is_stringliteral(obj):
-			out += "(stringLiteral " + obj
-		elif is_intliteral(obj):
-			out += "(intLiteral " + obj
-		elif is_floatliteral(obj):
-			out += "(floatLiteral " + obj
-		else:
-			throw_error("Parser error, unknown literal")
-			
-	
-		
-	else:
-		throw_error("Parser error while writing " + obj.__class__.__name__)
-
-	out += ")"
-	if DEBUG_LEVEL > 1:
-		print(out)
-	return out
-	
-def ast_to_string():
-	return setup_ast_to_string(protocols, classes, stms) + "\n"
-
 		
 def handle_protodecs(token):
 	global expecting
@@ -1448,6 +1819,10 @@ def handle_classdecs(token):
 	elif '}' == token:
 		expecting = expecting[1:] # rest of classdecs is empty
 		pop_stack()
+	else:
+		expecting = expecting[1:] # rest of classdecs is empty
+		add_to_ast(token)
+
 		
 def handle_classdec(token):
 	global expecting
@@ -1938,10 +2313,10 @@ def handle_exp(token, end):
 					current_obj.add_exp(exp_obj)
 					expecting = expecting[1:] # exp finished
 				else:
-					throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses")
+					throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses: " + str(current_obj.raw))
 			else:
 				if '(' != exp_grammar_stack.pop(0):
-					throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses")
+					throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses: " + str(current_obj.raw))
 				else:
 					current_obj.raw_append(token) # single char is part of exp
 		elif token == ']':
@@ -1954,10 +2329,10 @@ def handle_exp(token, end):
 					current_obj.add_exp(exp_obj)
 					expecting = expecting[1:] # exp finished
 				else:
-					throw_error("Syntax error while parsing <exp>", addl="Mismatching brackets")
+					throw_error("Syntax error while parsing <exp>", addl="Mismatching brackets: " + str(current_obj.raw))
 			else:
 				if '[' != exp_grammar_stack.pop(0):
-					throw_error("Syntax error while parsing <exp>", addl="Mismatching brackets")
+					throw_error("Syntax error while parsing <exp>", addl="Mismatching brackets: " + str(current_obj.raw))
 				else:
 					current_obj.raw_append(token) # single char is part of exp	
 		elif token == ';':
@@ -1969,7 +2344,7 @@ def handle_exp(token, end):
 				current_obj.add_exp(exp_obj)
 				expecting = expecting[1:] # exp finished
 			else:
-				throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses or brackets")
+				throw_error("Syntax error while parsing <exp>", addl="Mismatching parentheses or brackets: " + str(current_obj.raw))
 		else:
 			current_obj.raw_append(token) # single char is part of exp
 	
@@ -2039,6 +2414,10 @@ def handle_stm(token):
 		current_obj_type = "Stm"
 		current_obj.independent = True
 		stms.append(current_obj)
+	elif current_obj_type != "Stm":
+		push_stack()
+		current_obj = Stm()
+		current_obj_type = "Stm"
 	assert_obj_type("Stm")
 	handled = False
 	for key in STM_REDIRECTS.keys():
@@ -2047,6 +2426,7 @@ def handle_stm(token):
 			if key == token:
 				expecting[0] = STM_REDIRECTS[key]
 				if key == "{" and current_obj.independent:
+					current_obj.set_style("block")
 					expecting.insert(1, "<stm-finish>")
 				consume_tokens = ["return", "if", "while", "for", "halt"]
 				if key not in consume_tokens:
@@ -2097,6 +2477,7 @@ def handle_stm_if(token):
 		else:
 			read_tight_code(token)
 	elif expecting[0] == "<stm-then>":
+		expecting[0] = "<stm-else>"
 		expecting.insert(0, "<stm>")
 		add_to_ast(token)
 	elif expecting[0] == "<stm-else>" and token == "else":
@@ -2163,15 +2544,19 @@ def handle_stm_return(token):
 	global expecting
 	global current_obj
 	global current_obj_type
+	
 	if ';' == token:
-		current_obj.set_style("empty")
+		current_obj.set_style("return0")
 		expecting = expecting[1:] # consume ;
 	else:
+		current_obj.set_style("return")
 		expecting[0] = "<exp-semi>"
 		add_to_ast(token)
 	
+	# TODO not always stm?
+	
 	# add stm to its parent object
-	if not current_obj.independent:
+	if current_obj_type == "Stm" and not current_obj.independent:
 		stm_obj = current_obj
 		pop_stack()
 		current_obj.add_stm(stm_obj)
@@ -2199,42 +2584,11 @@ def handle_stm_halt(token):
 	else:
 		throw_error("Syntax error parsing <stm-halt>")
 			
-		
-# push current object to stack
-def push_stack():
-	global current_obj
-	global current_obj_type
-	global object_stack
-	global object_stack_type
-	object_stack.insert(0, current_obj)
-	object_type_stack.insert(0, current_obj_type)
-	current_obj = None
-	current_obj_type = None
-	
-# pop object from stack to current
-def pop_stack():
-	global current_obj
-	global current_obj_type
-	global object_stack
-	global object_type_stack
-	if len(object_stack) > 0:
-		current_obj = object_stack[0]
-		current_obj_type = object_type_stack[0]
-		object_stack = object_stack[1:]
-		object_type_stack = object_type_stack[1:]
-	else:
-		current_obj = None
-		current_obj_type = None
+			
+############################
+### VALIDITY CHECKERS ######
+############################
 
-def is_type(token): # TODO more needed here
-	valid = False
-	valid = valid or token in PRIMTYPES
-	valid = valid or is_typeapp(token)
-	# tricky to handle "int []" without some kind of lookahead function -- can also be any number of []s
-	# array, can be <type> []
-	# can be function ( ( <types> ) ARROW <rtype> )
-	return valid
-		
 def is_rtype(token):
 	return token is "void" or is_type(token)
 		
@@ -2305,6 +2659,7 @@ def is_floatliteral(token):
 		after_valid = before_e_valid and e_valid
 	return before_valid and after_valid
 	
+	
 def is_stringliteral(token):
 	str = token[1:-1]
 	if not (token.startswith("\"") and token.endswith("\"")):
@@ -2336,8 +2691,18 @@ def add_typeid(token):
 def is_typeid(token):
 	return token in typeids
 	
-def is_typeapp(token): # TODO, can also be <typeid> < <types> >
+def is_typeapp(token):
+	# TODO, can also be <typeid> < <types> >
+	# <<types>> = any number of <type> , <type> , ...
 	return is_typeid(token) or is_tvar(token)
+	
+def is_type(token):
+	valid = False
+	valid = valid or token in PRIMTYPES
+	valid = valid or is_typeapp(token)
+	# array, can be <type> []
+	# can be function ( ( <types> ) ARROW <rtype> )
+	return valid
 
 
 TOKEN_TO_HANDLER = { 
@@ -2368,6 +2733,7 @@ TOKEN_TO_HANDLER = {
 "<stm-empty>" : handle_stm_empty,
 "<stm-if>" : handle_stm_if,
 "<stm-then>" : handle_stm_if,
+"<stm-else>" : handle_stm_if,
 "<stm-while>" : handle_stm_while,
 "<stm-for>" : handle_stm_for,
 "<stm-finally>" : handle_stm_finally,

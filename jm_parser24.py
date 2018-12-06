@@ -423,6 +423,8 @@ class Exp:
 			except Exception as e:
 				if illegal:
 					return
+		print("DEBUG: compiled this <factor>: " + str(self))
+
 	
 	# handler for how to compose factor based on first token
 	def make_factor(self):
@@ -971,7 +973,8 @@ class Exp:
 					for f in self.raw:
 						print("> " + str(f))
 				throw_error("Parser error handling <exp>", addl="expected exactly 1 <exp>, got " + str(len(self.raw)) + ": " + str(self.raw))
-							
+						
+						
 		except Exception as e:
 			throw_error("Syntax error while parsing <exp>")
 			if DEBUG_LEVEL > 0.5:
@@ -1180,7 +1183,7 @@ def tokenize_line(line, repeat=False):
 					current_token = ""
 			else:
 				pass # just clearing whitespace
-		elif is_valid_char(c) or c == "\"":
+		elif is_valid_char(c) or c == "\"" or c == "\'":
 			current_token += c
 			if not parsing_string and "function" in current_token and current_token.count(')') == 2: # type hack
 				# wrap up and send token
@@ -2543,6 +2546,7 @@ def handle_stm_empty(token):
 		stm_obj = current_obj
 		pop_stack()
 		current_obj.add_stm(stm_obj)
+	expecting = expecting[1:]
 		
 def handle_stm_finally(token):
 	# fixme error if this is the last part of the program?
@@ -2801,12 +2805,12 @@ def is_typeapp(token):
 	return is_typeid(token) or is_tvar(token)
 	
 # Check whether a token is a valid type
-def is_type(token, permissive=True):
+def is_type(token, permissive=False): # fixme
 	valid = False
 	angle_valid = True
 	t2_valid = True
 	type_token = token
-		
+	
 	if is_typeid(token):
 		return True
 	

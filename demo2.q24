@@ -1,20 +1,24 @@
-//Comment
-
 protocol primes {
     fun divides (int d, int n) : bool;
     fun isPrime (int n) : bool;
 }
 
 class prime implements primes {
-    () { }
+    () {
+     int x = 4;
+     int y = 1;
+     char c = '1';
+     string four = "four";
+     string test = "example _4_ test";
+    }
 
     fun divides (int d, int n) : bool {
         return true;
     }
 
     fun isPrime (int n) : bool {
-        //printInt (n);
-        //printLine();
+        printInt(n);
+        printLine();
         return true;
     }
 
@@ -24,7 +28,7 @@ class prime implements primes {
 }
 
 {
+    int x = 3;
+    bool y = true;
     primes c = new prime();
-    printBool (c.isPrime (readInt()));
-    printLine();
 }

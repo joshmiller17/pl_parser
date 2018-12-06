@@ -1,0 +1,29 @@
+//Comment
+
+protocol p {
+    fun a (int i) : bool;
+    fun b (int i, char c) : char;
+    fun c (int i, char c);
+}
+
+class c implements p {
+    () { }
+
+    fun a (int i) : bool {
+        return true;
+    }
+
+    fun b (int i, char c) : char {
+        ;
+        return false;
+   }
+
+    fun c (int i, char c) {
+        ;;; //lots of skips
+        return 5;
+   }
+
+
+}
+
+    ;

@@ -15,8 +15,8 @@ Other files in this directory:
 	demo1.q24      A demo program to show where my program succeeds
 	demo2.q24      A demo program to show where my program mostly succeeds
     unindent.py    A helper file I used while debugging, unindents input file
-	chardiff.py    A helper file I used while debugging, removes whitespace and
-	               diffs inputs character by character
+	chardiff.py    A helper file I used while debugging, removes whitespace
+                   and diffs inputs character by character
 
 NOTES AND KNOWN BUGS
 Because I didn't use a parser generator for this project,

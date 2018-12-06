@@ -16,5 +16,6 @@
             (call printString ((stringLiteral " test "))))
           (expStm
             (call printString
-                  ((stringLiteral " test2 \r\n\teep\r\n\t"))))
+                  ((stringLiteral
+                     " test2 \r\n\r\n    test3\r\n    "))))
           (expStm (call printLine ())))))

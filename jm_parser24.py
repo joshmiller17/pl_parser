@@ -70,6 +70,7 @@ class Protocol:
 		self.typevars = []
 		self.funprotos = []
 		self.expecting_more_vars = False
+		self.open_tvars = False
 		
 	def set_typeid(self, i):
 		self.typeid = i
@@ -107,6 +108,7 @@ class Funproto:
 		self.typevars = []
 		self.formals = []
 		self.expecting_more_vars = False
+		self.open_tvars = False
 		
 	def set_id(self, i):
 		self.id = i
@@ -183,6 +185,7 @@ class Class:
 		self.init_formals = []
 		self.block = None
 		self.expecting_more_vars = False
+		self.open_tvars = False
 		self.expecting_formals = True
 		self.bodydecs = []
 		
@@ -457,9 +460,13 @@ class Exp:
 			self.new_factor()
 			self.handle_factor_lam()
 		elif '.' in token:
-			new_tokens = read_tight_code(self.raw.pop(self.index), internal=True, dot=True)
-			for n in new_tokens:
-				self.raw.insert(self.index, n)
+			if is_floatliteral(token):
+				self.new_factor()
+				self.handle_factor_lit()
+			else:
+				new_tokens = read_tight_code(self.raw.pop(self.index), internal=True, dot=True)
+				for n in new_tokens:
+					self.raw.insert(self.index, n)
 			return
 		elif '(' in token:
 			if '(' is token:
@@ -471,12 +478,12 @@ class Exp:
 				for n in new_tokens:
 					self.raw.insert(self.index, n)
 				return
-		elif is_id(token):
-			self.new_factor()
-			self.handle_factor_id()
 		elif is_literal(token):
 			self.new_factor()
 			self.handle_factor_lit()
+		elif is_id(token):
+			self.new_factor()
+			self.handle_factor_id()
 		else:
 			throw_error("Syntax error while parsing <factor>", addl="Token <" + token + "> confused the parser")
 	
@@ -744,7 +751,7 @@ class Exp:
 				token = self.raw[self.index]
 				for s in specials:
 					if s in token:
-						if s != token:
+						if s != token:							
 							new_tokens = read_tight_code(self.raw.pop(self.index),internal=True, dot=True)
 							for n in new_tokens:
 								self.raw.insert(self.index, n)
@@ -1125,6 +1132,8 @@ def tokenize_line(line, repeat=False):
 	global parsing_string
 	global current_token
 	if DEBUG_LEVEL > 0 and not illegal and not repeat:
+		if DEBUG_LEVEL > 1.5:
+			print("\n\n")
 		print("DEBUG: INPUT (line " + str(line_count) + "): " + line[:-1])
 	if repeat: # if re-tokenizing, stash current token
 		temp_token = current_token
@@ -1150,6 +1159,8 @@ def tokenize_line(line, repeat=False):
 				elif ord(c) == 0xd:
 					throw_error("Forbidden character: '\\r' in <stringliteral>")
 				current_token += c
+			elif "function" in current_token:
+				pass # clearing whitespace but not destroying current token
 			elif current_token != "":
 				# wrap up and send token
 				token = current_token
@@ -1170,6 +1181,10 @@ def tokenize_line(line, repeat=False):
 				pass # just clearing whitespace
 		elif is_valid_char(c) or c == "\"":
 			current_token += c
+			if not parsing_string and "function" in current_token and current_token.count(')') == 2: # type hack
+				# wrap up and send token
+				add_to_ast(current_token)
+				current_token = ""
 			if current_token.startswith("\""):
 				parsing_string = True
 			if current_token.startswith("\"") and current_token.endswith("\"") and len(current_token) > 1:  #deprecated?
@@ -1583,8 +1598,10 @@ def add_to_ast(token):
 		return
 	if DEBUG_LEVEL > 1:
 		print("DEBUG: Tokenizing <" + token + "> while expecting " + expecting[0])
-		if DEBUG_LEVEL > 2:
+		if DEBUG_LEVEL > 1.5:
 			print("DEBUG: Expecting: " + str(expecting))
+			print("DEBUG: Current obj: " + str(current_obj_type))
+			print("DEBUG: Obj stack: " + str(object_stack))
 	
 	check_current_obj()
 	
@@ -1594,7 +1611,9 @@ def add_to_ast(token):
 	try:
 		handler = TOKEN_TO_HANDLER[expecting[0]]	
 		if DEBUG_LEVEL > 1:
-			print("DEBUG: Token <" + token + "> sent to " + str(handler))	
+			print("DEBUG: Token <" + token + "> sent to " + str(handler))
+			if DEBUG_LEVEL > 1.5:
+				print("DEBUG: EXPECTING: " + str(expecting))
 		handler(token)
 	except KeyError as e:
 		print("\nParser error: No handler for token " + token + " while expecting " + expecting[0])
@@ -1603,7 +1622,9 @@ def add_to_ast(token):
 
 # handle tokens that have less whitespace than we hope for, such as (int) or :void
 # puts space between all special characters
-def read_tight_code(token, internal=False, dot=False):
+def read_tight_code(token, internal=False, dot=False, angle=False):
+	if "function" in token:
+		throw_error("Parser error, trying to split a function type")
 	if is_stringliteral(token):
 		space = "\x20"
 		new_line = token.replace(" ", space)
@@ -1611,6 +1632,9 @@ def read_tight_code(token, internal=False, dot=False):
 	tight_tokens = ['(', ')', '{', '}', ',', ':', ';']
 	if dot:
 		tight_tokens.append('.')
+	if angle:
+		tight_tokens.append('<')
+		tight_tokens.append('>')
 	new_line = token
 	for t in tight_tokens:
 		new_line = new_line.replace(t, " " + t + " ")
@@ -1688,24 +1712,38 @@ def handle_protodec(token):
 	if assert_obj_type("Protocol"):
 		# expect id first
 		if current_obj.typeid == None:
-			if is_id(token):
+			if is_id(token, proto=True):
 				current_obj.set_typeid(token)
 				add_typeid(token) # define new typeid
+			elif '<' in token:
+				read_tight_code(token, angle=True)
 			else:
 				throw_error("Encountered " + token + " while expecting a typeid for a <protodec>")
 		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
-		elif ',' == token: # expect another tvar
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Too many commas in typevars?")
-			current_obj.set_expecting(True)
-		elif ',' in token: # comma is part of another token
-			for raw_token in token.split(','):
-				t = raw_token.strip() # double check no whitespace
-				add_to_ast(t)
-				add_to_ast(',') # splitting on commas, put commas back
-		elif is_tvar(token): # no comma
-			current_obj.add_typevar(token)
-			current_obj.set_expecting(False)
+		elif '<' in token:
+			if '<' is token:
+				current_obj.open_tvars = True
+				current_obj.set_expecting(True)
+			else:
+				read_tight_code(token, angle=True)
+		elif current_obj.open_tvars:
+			if '>' in token:
+				if '>' is token:
+					if current_obj.expecting_more_vars:
+						throw_error("Syntax error in <protodec>", addl="Expecting another <typevar>")
+					else:
+						current_obj.open_tvars = False
+				else:
+					read_tight_code(token)
+			elif ',' == token: # expect another tvar
+				if current_obj.expecting_more_vars:
+					throw_error("Syntax error", addl="Too many commas in typevars?")
+				current_obj.set_expecting(True)
+			elif ',' in token: # comma is part of another token
+				read_tight_code(token)
+			elif is_tvar(token): # no comma
+				current_obj.add_typevar(token)
+				current_obj.set_expecting(False)
 		elif token == "extends":
 			if current_obj.expecting_more_vars:
 				throw_error("Syntax error", addl="Expecting another typevar")
@@ -1749,13 +1787,19 @@ def handle_formals(token):
 	global current_obj
 	global current_obj_type
 	
-	if ')' in token:
+	if ')' in token and "function" not in token or ("function" in token and token.count(')') > 2): # type hack, messy
 		if ')' is token:
 			if expecting[0] == "<formals-rest>":
 				throw_error("Expecting another <formal>")
 			expecting = expecting[1:] # rest of formals is empty
 		else:
-			read_tight_code(token)
+			if "function" not in token:
+				read_tight_code(token)
+			elif ')' == token[-1]:
+				tokenize_line(')', repeat=True)
+				tokenize_line(token[:-1], repeat=True)
+			else:
+				throw_error("Parser error, unable to parse <formals>")
 	
 	elif ',' in token:
 		if ',' is token:
@@ -1833,21 +1877,35 @@ def handle_classdec(token):
 		if current_obj.id == None:
 			if is_id(token):
 				current_obj.set_id(token)
+			elif '<' in token:
+				read_tight_code(token, angle=True)
 			else:
 				throw_error("Encountered " + token + " while expecting an <id> for a <classdec>")
 		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
-		elif ',' == token: # expect another tvar
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Too many commas in typevars?")
-			current_obj.set_expecting(True)
-		elif ',' in token: # comma is part of another token
-			for raw_token in token.split(','):
-				t = raw_token.strip() # double check no whitespace
-				add_to_ast(t)
-				add_to_ast(',') # splitting on commas, put commas back
-		elif is_tvar(token): # no comma
-			current_obj.add_typevar(token)
-			current_obj.set_expecting(False)
+		elif '<' in token and not '(' in token:
+			if '<' is token:
+				current_obj.open_tvars = True
+				current_obj.set_expecting(True)
+			else:
+				read_tight_code(token, angle=True)
+		elif current_obj.open_tvars:
+			if '>' in token:
+				if '>' is token:
+					if current_obj.expecting_more_vars:
+						throw_error("Syntax error in <classdec>", addl="Expecting another <typevar>")
+					else:
+						current_obj.open_tvars = False
+				else:
+					read_tight_code(token)
+			elif ',' == token: # expect another tvar
+				if current_obj.expecting_more_vars:
+					throw_error("Syntax error", addl="Too many commas in typevars?")
+				current_obj.set_expecting(True)
+			elif ',' in token: # comma is part of another token
+				read_tight_code(token)
+			elif is_tvar(token): # no comma
+				current_obj.add_typevar(token)
+				current_obj.set_expecting(False)
 		elif token == "implements":
 			if current_obj.expecting_more_vars:
 				throw_error("Syntax error", addl="Expecting another typevar")
@@ -2029,24 +2087,37 @@ def handle_funproto(token):
 		throw_error("Funproto expected")
 	else:
 		if current_obj.id == None:
-			# expect id first
 			if is_id(token):
 				current_obj.set_id(token)
+			elif '<' in token:
+				read_tight_code(token, angle=True)
 			else:
 				throw_error("Encountered " + token + " while expecting an <id> for a <funproto>")
 		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
-		elif ',' == token: # expect another tvar
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Too many commas in typevars?")
-			current_obj.set_expecting(True)
-		elif ',' in token: # comma is part of another token
-			for raw_token in token.split(','):
-				t = raw_token.strip() # double check no whitespace
-				add_to_ast(t)
-				add_to_ast(',') # splitting on commas, put commas back
-		elif is_tvar(token): # no comma
-			current_obj.add_typevar(token)
-			current_obj.set_expecting(False)
+		elif '<' in token and not '(' in token:
+			if '<' is token:
+				current_obj.open_tvars = True
+				current_obj.set_expecting(True)
+			else:
+				read_tight_code(token, angle=True)
+		elif current_obj.open_tvars:
+			if '>' in token:
+				if '>' is token:
+					if current_obj.expecting_more_vars:
+						throw_error("Syntax error in <protodec>", addl="Expecting another <typevar>")
+					else:
+						current_obj.open_tvars = False
+				else:
+					read_tight_code(token)
+			elif ',' == token: # expect another tvar
+				if current_obj.expecting_more_vars:
+					throw_error("Syntax error", addl="Too many commas in typevars?")
+				current_obj.set_expecting(True)
+			elif ',' in token: # comma is part of another token
+				read_tight_code(token)
+			elif is_tvar(token): # no comma
+				current_obj.add_typevar(token)
+				current_obj.set_expecting(False)
 		elif '(' in token:
 			if current_obj.expecting_more_vars:
 				throw_error("Syntax error", addl="Expecting another typevar")
@@ -2055,7 +2126,11 @@ def handle_funproto(token):
 					#expecting = expecting[1:] # rest of funprotos is formals, possibly rtype
 					expecting.insert(0, "<formals>")
 				else:
-					read_tight_code(token)
+					if '(' == token[0]:
+						tokenize_line('(', repeat=True)
+						tokenize_line(token[1:], repeat=True)
+					else:
+						throw_error("Parser error, unable to parse <formals>")
 		elif ':' in token:
 			if ':' is token:
 				expecting.insert(0, "<rtype>")
@@ -2213,24 +2288,37 @@ def handle_fundec(token):
 		throw_error("Fundec expected")
 	else:
 		if current_obj.id == None:
-			# expect id first
 			if is_id(token):
 				current_obj.set_id(token)
+			elif '<' in token:
+				read_tight_code(token, angle=True)
 			else:
 				throw_error("Encountered " + token + " while expecting an <id> for a <fundec>")
 		# tvars next, can be empty or Tvar or Tvar, Tvar, ... Tvar
-		elif ',' == token: # expect another tvar
-			if current_obj.expecting_more_vars:
-				throw_error("Syntax error", addl="Too many commas in typevars?")
-			current_obj.set_expecting(True)
-		elif ',' in token: # comma is part of another token
-			for raw_token in token.split(','):
-				t = raw_token.strip() # double check no whitespace
-				add_to_ast(t)
-				add_to_ast(',') # splitting on commas, put commas back
-		elif is_tvar(token): # no comma
-			current_obj.add_typevar(token)
-			current_obj.set_expecting(False)
+		elif '<' in token:
+			if '<' is token:
+				current_obj.open_tvars = True
+				current_obj.set_expecting(True)
+			else:
+				read_tight_code(token, angle=True)
+		elif current_obj.open_tvars:
+			if '>' in token:
+				if '>' is token:
+					if current_obj.expecting_more_vars:
+						throw_error("Syntax error in <protodec>", addl="Expecting another <typevar>")
+					else:
+						current_obj.open_tvars = False
+				else:
+					read_tight_code(token)
+			elif ',' == token: # expect another tvar
+				if current_obj.expecting_more_vars:
+					throw_error("Syntax error", addl="Too many commas in typevars?")
+				current_obj.set_expecting(True)
+			elif ',' in token: # comma is part of another token
+				read_tight_code(token)
+			elif is_tvar(token): # no comma
+				current_obj.add_typevar(token)
+				current_obj.set_expecting(False)
 		elif '(' in token:
 			if current_obj.expecting_more_vars:
 				throw_error("Syntax error", addl="Expecting another typevar")
@@ -2458,6 +2546,8 @@ def handle_stm_empty(token):
 def handle_stm_finally(token):
 	# fixme error if this is the last part of the program?
 	# add stm to its parent object
+	global expecting
+	expecting = expecting[1:]
 	if not current_obj.independent:
 		stm_obj = current_obj
 		pop_stack()
@@ -2553,7 +2643,7 @@ def handle_stm_return(token):
 		expecting[0] = "<exp-semi>"
 		add_to_ast(token)
 	
-	# TODO not always stm?
+	# fixme not always stm?
 	
 	# add stm to its parent object
 	if current_obj_type == "Stm" and not current_obj.independent:
@@ -2613,12 +2703,24 @@ def is_valid_char(c, mustbe=[], cantbe=[]):
 		return True
 	return False
 	
-def is_id(token):
-	valid = is_valid_char(token[0], mustbe=["lower"])
-	if len(token) > 1:
-		for c in token[1:]:
+def is_id(token, proto=False, permissive=False):
+	valid = True
+	tok = token
+	if '<' in token:
+		if '>' == token[-1]:
+			for t in token[token.find('<')+1:-1].split(','):
+				valid = valid and (is_type(t) or proto or is_id(t,permissive=True))
+			tok = token[:token.find('<')]
+		else:
+			return False
+	if not permissive:
+		valid = valid and is_valid_char(tok[0], mustbe=["lower"])
+	else:
+		valid = valid and is_valid_char(tok[0])
+	if len(tok) > 1:
+		for c in tok[1:]:
 			valid = valid and is_valid_char(c, cantbe=["print"]) # subsequent
-	valid = valid and not is_reserved(token)
+	valid = valid and not is_reserved(tok)
 	return valid
 	
 def is_reserved(token):
@@ -2640,6 +2742,7 @@ def is_intliteral(token):
 	return valid
 	
 def is_floatliteral(token):
+	print("!!!!!!!!!!!checking float literal: " + str(token)) # TODO remove
 	if token.find('.') == -1 or len(token) < 2: # can't be just '.'
 		return False
 	else:
@@ -2687,22 +2790,67 @@ def is_literal(token):
 def add_typeid(token):
 	global typeids
 	typeids.append(token)
+	if DEBUG_LEVEL > 1.5:
+		print("DEBUG: Added typeid " + token)
 	
 def is_typeid(token):
 	return token in typeids
 	
 def is_typeapp(token):
-	# TODO, can also be <typeid> < <types> >
-	# <<types>> = any number of <type> , <type> , ...
+	# fixme doesn't handle <typeid> <<types>>
 	return is_typeid(token) or is_tvar(token)
 	
-def is_type(token):
+# Check whether a token is a valid type
+def is_type(token, permissive=True):
 	valid = False
-	valid = valid or token in PRIMTYPES
-	valid = valid or is_typeapp(token)
+	angle_valid = True
+	t2_valid = True
+	type_token = token
+	
+	print("T: " + token) # TODO remove
+	
+	if is_typeid(token):
+		return True
+	
+	# Generally handle "function" types
+	if token.startswith('(') and token.endswith(')'):
+		type_token = token[1:-1]
+		for a in type_token.split(','):
+			t2_valid = t2_valid and is_type(a)
+	if token.startswith("function("):
+		arrow_index = token.find(ARROW)
+		type_token = token[9:arrow_index]
+		type2 = token[arrow_index+2:-1]
+		t2_valid = t2_valid and is_type(type2)
+		
+	# Generally handle <T> types
+	elif '<' in token:
+		if '>' == token[-1]:
+			angle_type = token[token.find('<')+1:-1]
+			type_token = token[:token.find('<')]
+			print("A: " + token) # TODO remove
+			print("TT: " + token) # TODO remove
+			for a in angle_type.split(','):
+				print("AA: " + a)
+				angle_valid = angle_valid and is_type(a, permissive=True)
+		else:
+			angle_valid = False
+			
+	# Remove extra ()
+	if type_token.startswith('(') and type_token.endswith(')'):
+		type_token = type_token[1:-1]
+		for a in type_token.split(','):
+			t2_valid = t2_valid and is_type(a)
+			
+	# Check basic type
+	valid = valid or type_token in PRIMTYPES
+	valid = valid or is_typeapp(type_token)
+	if permissive:
+		valid = valid or is_id(type_token, permissive=True)
 	# array, can be <type> []
+	# can be <type><T>
 	# can be function ( ( <types> ) ARROW <rtype> )
-	return valid
+	return valid and angle_valid and t2_valid
 
 
 TOKEN_TO_HANDLER = { 

@@ -16,7 +16,7 @@ class c implements proto {
     printString(" test ");
     printString(" test2 
 
-    eep
+    test3
     ");
     printLine();
 }
